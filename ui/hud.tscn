@@ -1,0 +1,89 @@
+[gd_scene load_steps=2 format=3 uid="uid://hud_scene"]
+
+[ext_resource type="Script" path="res://ui/hud.gd" id="1_hud"]
+
+[node name="HUD" type="CanvasLayer"]
+script = ExtResource("1_hud")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 90.0
+grow_horizontal = 2
+theme_override_constants/margin_left = 40
+theme_override_constants/margin_top = 15
+theme_override_constants/margin_right = 40
+
+[node name="TopBar" type="HBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 30
+alignment = 1
+
+[node name="Team0Name" type="Label" parent="MarginContainer/TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.2, 0.5, 1, 1)
+theme_override_font_sizes/font_size = 24
+text = "BLUE"
+horizontal_alignment = 2
+
+[node name="Team0Score" type="Label" parent="MarginContainer/TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.2, 0.5, 1, 1)
+theme_override_font_sizes/font_size = 48
+text = "0"
+horizontal_alignment = 2
+
+[node name="HSeparator" type="VSeparator" parent="MarginContainer/TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="Clock" type="Label" parent="MarginContainer/TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 36
+text = "2:00"
+horizontal_alignment = 1
+
+[node name="Quarter" type="Label" parent="MarginContainer/TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0, 0.9, 1, 0.7)
+theme_override_font_sizes/font_size = 24
+text = "Q1"
+horizontal_alignment = 1
+
+[node name="HSeparator2" type="VSeparator" parent="MarginContainer/TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="Team1Score" type="Label" parent="MarginContainer/TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.3, 0.2, 1)
+theme_override_font_sizes/font_size = 48
+text = "0"
+horizontal_alignment = 0
+
+[node name="Team1Name" type="Label" parent="MarginContainer/TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.3, 0.2, 1)
+theme_override_font_sizes/font_size = 24
+text = "RED"
+horizontal_alignment = 0
+
+[node name="CenterMessage" type="Label" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -50.0
+offset_right = 300.0
+offset_bottom = 50.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.85, 0, 1)
+theme_override_font_sizes/font_size = 64
+text = "GAME OVER"
+horizontal_alignment = 1
+vertical_alignment = 1
+visible = false

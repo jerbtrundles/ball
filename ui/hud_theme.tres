@@ -1,0 +1,6 @@
+[gd_resource type="Theme" format=3]
+
+[sub_resource type="FontFile" id="FontFile_1"]
+
+[resource]
+default_font_size = 28

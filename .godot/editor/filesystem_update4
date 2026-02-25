@@ -1,0 +1,8 @@
+res://scenes/court/court_builder.gd
+res://scenes/court/court_setup.gd
+res://scripts/ai_controller.gd
+res://scripts/player_controller.gd
+res://scenes/characters/player.gd
+res://scenes/ball/ball.gd
+res://scripts/game_manager.gd
+res://ui/hud.gd
