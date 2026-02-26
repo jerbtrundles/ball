@@ -7,6 +7,7 @@ signal quarter_changed(quarter: int)
 signal game_over(winner_team: int)
 signal ball_possession_changed(player: Node3D)
 signal throw_in_started(team_index: int)
+signal teams_updated(team0_data: Resource, team1_data: Resource)
 
 enum MatchState { PRE_GAME, TIP_OFF, PLAYING, SCORED, THROW_IN, QUARTER_BREAK, GAME_OVER, INBOUND }
 
@@ -23,6 +24,7 @@ var time_remaining: float = 0.0
 var scores: Array[int] = [0, 0]
 var ball: RigidBody3D = null
 var teams: Array = [[], []]
+var team_data_store: Array = [null, null] # Store TeamData resources
 var possession_team: int = -1
 var sides_flipped: bool = false
 var tip_off_winner: int = -1   # Team that won the initial tip-off
@@ -62,12 +64,113 @@ func _ready() -> void:
 	_create_hazard_spawner()
 	
 	# Connect screen shake
-	if VFX:
-		VFX.screen_shake_requested.connect(_on_screen_shake)
-	
+	var vfx = get_node_or_null("/root/VFX")
+	if vfx:
+		vfx.screen_shake_requested.connect(_on_screen_shake)
+		
 	await get_tree().process_frame
+	
+	# Check for pending match from LeagueManager
+	if LeagueManager.pending_match_data.has("team_a"):
+		var data = LeagueManager.pending_match_data
+		setup_match(data["team_a"], data["team_b"], data.get("config", {}))
+		LeagueManager.clear_pending_match()
+		return
+	
+	# If no pending match, verify if we found teams from the scene (debug play in editor)
 	_find_teams()
+	if teams[0].size() > 0 and teams[1].size() > 0:
+		start_match()
+
+func setup_match(team0_data: Resource, team1_data: Resource, config: Dictionary = {}) -> void:
+	# Apply Config
+	if config.has("quarter_duration"):
+		quarter_duration = config["quarter_duration"]
+		time_remaining = quarter_duration
+	
+	var items_enabled = config.get("items_enabled", true)
+	var human_team = config.get("human_team_index", 0)
+	
+	# Clear existing players
+	get_tree().call_group("players", "queue_free")
+	await get_tree().process_frame # Wait for deletion
+	
+	# Disable hazard spawner if items disabled
+	var hazard_spawner = get_node_or_null("HazardSpawner")
+	if hazard_spawner:
+		hazard_spawner.process_mode = Node.PROCESS_MODE_INHERIT if items_enabled else Node.PROCESS_MODE_DISABLED
+		if not items_enabled:
+			# Also clear existing hazards
+			get_tree().call_group("hazards", "queue_free")
+	
+	teams = [[], []]
+	team_data_store = [team0_data, team1_data]
+	teams_updated.emit(team0_data, team1_data)
+	var PlayerScene = load("res://scenes/characters/player.tscn")
+	
+	# Spawn Team 0
+	_spawn_team(team0_data, 0, PlayerScene, human_team)
+	# Spawn Team 1
+	_spawn_team(team1_data, 1, PlayerScene, human_team)
+	
+	# Start match
 	start_match()
+
+func _spawn_team(team_data: Resource, team_idx: int, player_scene: PackedScene, human_team_idx: int) -> void:
+	var roster = team_data.roster
+	var tip_off_pos = tip_off_positions_team0 if team_idx == 0 else tip_off_positions_team1
+	
+	for i in range(roster.size()):
+		var p_data = roster[i]
+		var player = player_scene.instantiate()
+	for i in range(roster.size()):
+		var p_data = roster[i]
+		var player = player_scene.instantiate()
+		player.name = "Player_%d_%d" % [team_idx, i]
+		
+		# Set properties BEFORE adding to tree
+		player.team_index = team_idx
+		player.player_name = p_data.name
+		player.jersey_number = 10 + i 
+		
+		# Human Control
+		if team_idx == human_team_idx and i == 0:
+			player.is_human = true
+		else:
+			# Add AI Controller
+			var ai_script = load("res://scripts/ai_controller.gd")
+			if ai_script:
+				var ai = ai_script.new()
+				ai.name = "AIController"
+				player.add_child(ai)
+				ai.player = player
+		
+		# Apply Stats
+		player.move_speed = 6.0 + (p_data.speed * 0.4)
+		player.shot_power = 10.0 + (p_data.shot * 0.5)
+		player.tackle_force = 12.0 + (p_data.tackle * 0.6)
+		player.strength = 1.0 + (p_data.strength * 0.1)
+		player.aggressiveness = p_data.aggression
+		
+		# Colors
+		if "custom_team_color" in player:
+			player.custom_team_color = team_data.color_primary
+		
+		# Position
+		if i < tip_off_pos.size():
+			player.global_position = tip_off_pos[i]
+		else:
+			player.global_position = Vector3(10 * (team_idx * 2 - 1), 0, 10 + i)
+		
+		add_sibling(player) # Add to scene
+			
+		teams[team_idx].append(player)
+		
+		# Add jersey labels
+		_add_jersey_labels(player)
+
+	# Update UI with team names?
+	pass
 
 func _find_teams() -> void:
 	teams = [[], []]
@@ -268,9 +371,17 @@ func _do_inbound_pass(inbound_team: int, endline_z: float) -> void:
 	
 	# HUD
 	var hud = get_tree().get_first_node_in_group("hud")
-	var team_name = "BLUE" if inbound_team == 0 else "RED"
+	var team_name = "BLUE"
+	var team_color = Color.BLUE
+	if team_data_store[inbound_team]:
+		team_name = team_data_store[inbound_team].name
+		team_color = team_data_store[inbound_team].color_primary
+	elif inbound_team == 1:
+		team_name = "RED"
+		team_color = Color.RED
+		
 	if hud and hud.has_method("show_message"):
-		hud.show_message("%s BALL" % team_name, 1.5)
+		hud.show_message("%s BALL" % team_name.to_upper(), 1.5, team_color)
 	
 	# Pause with everyone frozen, then execute the pass
 	await get_tree().create_timer(2.0).timeout
@@ -306,11 +417,19 @@ func _do_inbound_pass(inbound_team: int, endline_z: float) -> void:
 #  SCORING
 # =========================================================
 
-func award_score(scoring_team: int, points: int) -> void:
+func award_score(scoring_team: int, points: int, stop_game: bool = true) -> void:
 	if match_state != MatchState.PLAYING:
 		return
 	scores[scoring_team] += points
 	score_changed.emit(scoring_team, scores[scoring_team])
+	
+	if not stop_game:
+		# Free points / Bonus logic
+		var hud = get_tree().get_first_node_in_group("hud")
+		if hud and hud.has_method("show_gaudy_message"):
+			hud.show_gaudy_message("FREE POINTS", 2.0)
+		return
+	
 	match_state = MatchState.SCORED
 	
 	_strip_ball_from_all()
@@ -327,11 +446,19 @@ func award_score(scoring_team: int, points: int) -> void:
 	# HUD message
 	var hud = get_tree().get_first_node_in_group("hud")
 	if hud and hud.has_method("show_message"):
-		var team_name = "BLUE" if scoring_team == 0 else "RED"
-		var msg = "%s SCORES!" % team_name
+		var team_name = "BLUE"
+		var team_color = Color.BLUE
+		if team_data_store[scoring_team]:
+			team_name = team_data_store[scoring_team].name
+			team_color = team_data_store[scoring_team].color_primary
+		elif scoring_team == 1:
+			team_name = "RED"
+			team_color = Color.RED
+
+		var msg = "%s SCORES!" % team_name.to_upper()
 		if points == 3:
-			msg = "THREE POINTER! %s" % team_name
-		hud.show_message(msg, 2.0)
+			msg = "THREE POINTER! %s" % team_name.to_upper()
+		hud.show_message(msg, 2.0, team_color)
 	
 	await get_tree().create_timer(3.0).timeout
 	
@@ -355,7 +482,14 @@ func _on_ball_out_of_bounds(last_touch_team: int, oob_position: Vector3) -> void
 	
 	var receiving_team = 1 - last_touch_team if last_touch_team >= 0 else 0
 	
-	var team_name = "BLUE" if receiving_team == 0 else "RED"
+	var team_name = "BLUE"
+	var team_color = Color.BLUE
+	if team_data_store[receiving_team]:
+		team_name = team_data_store[receiving_team].name
+		team_color = team_data_store[receiving_team].color_primary
+	elif receiving_team == 1:
+		team_name = "RED"
+		team_color = Color.RED
 	print("[OOB] Team %d last touched. %s ball." % [last_touch_team, team_name])
 	
 	# Figure out the inbound spot — just inside the court near where it went out
@@ -364,7 +498,7 @@ func _on_ball_out_of_bounds(last_touch_team: int, oob_position: Vector3) -> void
 	# HUD
 	var hud = get_tree().get_first_node_in_group("hud")
 	if hud and hud.has_method("show_message"):
-		hud.show_message("OUT OF BOUNDS — %s BALL" % team_name, 1.5)
+		hud.show_message("OUT OF BOUNDS — %s BALL" % team_name.to_upper(), 1.5, team_color)
 	
 	await get_tree().create_timer(1.0).timeout
 	
@@ -601,8 +735,16 @@ func _end_quarter() -> void:
 	possession_arrow = 1 - possession_arrow
 	
 	if hud and hud.has_method("show_message"):
-		var team_name = "BLUE" if inbound_team == 0 else "RED"
-		hud.show_message("QUARTER %d — %s BALL" % [current_quarter, team_name], 2.0)
+		var team_name = "BLUE"
+		var team_color = Color.BLUE
+		if team_data_store[inbound_team]:
+			team_name = team_data_store[inbound_team].name
+			team_color = team_data_store[inbound_team].color_primary
+		elif inbound_team == 1:
+			team_name = "RED"
+			team_color = Color.RED
+			
+		hud.show_message("QUARTER %d — %s BALL" % [current_quarter, team_name.to_upper()], 2.0, team_color)
 	
 	await get_tree().create_timer(2.0).timeout
 	

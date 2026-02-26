@@ -86,9 +86,14 @@ func _ready() -> void:
 var _left_arm_pivot: Node3D = null
 var _right_arm_pivot: Node3D = null
 var _arm_tween: Tween = null
+var custom_team_color: Color = Color(0, 0, 0, 0) # If alpha > 0, overrides team_index color
 
 func _setup_visuals() -> void:
 	var color = team_colors[team_index] if team_index < team_colors.size() else Color.WHITE
+	if custom_team_color.a > 0.0:
+		color = custom_team_color
+	
+	team_color_material.albedo_color = color
 	team_color_material.albedo_color = color
 	team_color_material.emission_enabled = true
 	team_color_material.emission = color * 0.3
@@ -201,7 +206,7 @@ func _setup_visuals() -> void:
 		ring_mat.albedo_color.a = 0.7
 		ring.material_override = ring_mat
 		ring.position = Vector3(0, 0.05, 0)
-		ring.rotation.x = PI / 2
+		# ring.rotation.x = PI / 2  # Removed to make it flat on the ground
 		add_child(ring)
 
 # --- Arm animations ---

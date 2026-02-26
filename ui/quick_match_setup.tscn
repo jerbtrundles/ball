@@ -1,0 +1,170 @@
+[gd_scene load_steps=2 format=3 uid="uid://quick_match_setup_scene"]
+
+[ext_resource type="Script" path="res://ui/quick_match_setup.gd" id="1_quick_match_setup"]
+
+[node name="QuickMatchSetup" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_quick_match_setup")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.1, 0.1, 0.2, 1)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = -250.0
+offset_right = 400.0
+offset_bottom = 250.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 20
+
+[node name="Label" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 48
+text = "MATCH SETUP"
+horizontal_alignment = 1
+
+[node name="HBox_Teams" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 40
+alignment = 1
+
+[node name="VBox_TeamA" type="VBoxContainer" parent="VBoxContainer/HBox_Teams"]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+alignment = 1
+
+[node name="Label_Header" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamA"]
+layout_mode = 2
+text = "TEAM A"
+horizontal_alignment = 1
+
+[node name="LogoRect" type="TextureRect" parent="VBoxContainer/HBox_Teams/VBox_TeamA"]
+custom_minimum_size = Vector2(128, 128)
+layout_mode = 2
+stretch_mode = 5
+
+[node name="TeamName" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamA"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Red Team"
+horizontal_alignment = 1
+
+[node name="NavHint" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamA"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+text = "^ PREV   v NEXT"
+horizontal_alignment = 1
+
+[node name="VS_Label" type="Label" parent="VBoxContainer/HBox_Teams"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 64
+text = "VS"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="VBox_TeamB" type="VBoxContainer" parent="VBoxContainer/HBox_Teams"]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+alignment = 1
+
+[node name="Label_Header" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamB"]
+layout_mode = 2
+text = "TEAM B"
+horizontal_alignment = 1
+
+[node name="LogoRect" type="TextureRect" parent="VBoxContainer/HBox_Teams/VBox_TeamB"]
+custom_minimum_size = Vector2(128, 128)
+layout_mode = 2
+stretch_mode = 5
+
+[node name="TeamName" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamB"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Blue Team"
+horizontal_alignment = 1
+
+[node name="NavHint" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamB"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+text = "^ PREV   v NEXT"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="HBox_Quarters" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="Label" type="Label" parent="VBoxContainer/HBox_Quarters"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "Quarter Length:"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBox_Quarters"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+
+[node name="HBox_Items" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="Label" type="Label" parent="VBoxContainer/HBox_Items"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "Items / Hazards:"
+
+[node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBox_Items"]
+layout_mode = 2
+button_pressed = true
+text = "Enabled"
+
+[node name="HBox_Side" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="Label" type="Label" parent="VBoxContainer/HBox_Side"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "Player Side:"
+
+[node name="SideLabel" type="Label" parent="VBoxContainer/HBox_Side"]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+text = "Team A Name"
+horizontal_alignment = 1
+
+[node name="NavHint" type="Label" parent="VBoxContainer/HBox_Side"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+text = "< CHANGE >"
+
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="BtnStart" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 32
+text = "START MATCH"
+
+[node name="BtnBack" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "BACK"

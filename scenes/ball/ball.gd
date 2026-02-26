@@ -117,9 +117,14 @@ func register_touch(team_index: int) -> void:
 func _on_hoop_entered(hoop_team: int) -> void:
 	if not _was_shot:
 		return
-	var scoring_team = 1 - hoop_team
-	
 	var game_mgr = get_tree().get_first_node_in_group("game_manager")
+	var sides_flipped = false
+	if game_mgr and "sides_flipped" in game_mgr:
+		sides_flipped = game_mgr.sides_flipped
+	
+	var scoring_team = 1 - hoop_team
+	if sides_flipped:
+		scoring_team = hoop_team
 	var points = 2
 	if game_mgr and game_mgr.has_method("is_three_pointer"):
 		points = 3 if game_mgr.is_three_pointer(_shot_origin, hoop_team) else 2

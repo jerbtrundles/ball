@@ -16,13 +16,14 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 config/name="Combat Basketball"
 config/description="A modern remake of Bill Laimbeer's Combat Basketball"
-run/main_scene="res://scenes/court/court.tscn"
+run/main_scene="res://ui/main_menu.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 
 [autoload]
 
 VFX="*res://scripts/vfx_manager.gd"
+LeagueManager="*res://scripts/managers/league_manager.gd"
 
 [display]
 

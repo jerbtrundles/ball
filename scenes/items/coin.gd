@@ -71,7 +71,7 @@ func _on_body_entered(body: Node3D) -> void:
 		if "team_index" in body:
 			var game_mgr = get_tree().get_first_node_in_group("game_manager")
 			if game_mgr and game_mgr.has_method("award_score"):
-				game_mgr.award_score(body.team_index, 1)
+				game_mgr.award_score(body.team_index, 1, false)
 		
 		# VFX
 		if VFX:
