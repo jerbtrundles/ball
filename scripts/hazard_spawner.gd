@@ -6,10 +6,11 @@ var spawn_interval_min: float = 4.0
 var spawn_interval_max: float = 8.0
 var _spawn_timer: float = 0.0
 var _next_spawn: float = 5.0  # First spawn after 5 seconds
+var is_debug: bool = false
 
 # Max active limits
 var max_mines: int = 5
-var max_saw_blades: int = 2
+var max_cyclones: int = 2
 var max_missiles: int = 1
 var max_power_ups: int = 3
 var max_coins: int = 8
@@ -18,12 +19,22 @@ var max_coins: int = 8
 var court_half_w: float = 8.0
 var court_half_l: float = 15.0
 
-# Spawn weights (must sum to 100)
+# Per-type enable/disable (all enabled by default)
+var enabled_types: Dictionary = {
+	"mine": true,
+	"cyclone": true,
+	"missile": true,
+	"power_up": true,
+	"coin": true,
+	"crowd_throw": true,
+}
+
+# Spawn weights
 var spawn_weights: Dictionary = {
 	"mine": 35,
 	"power_up": 25,
 	"coin": 15,
-	"saw_blade": 12,
+	"cyclone": 12,
 	"crowd_throw": 8,
 	"missile": 5,
 }
@@ -31,6 +42,9 @@ var spawn_weights: Dictionary = {
 func _process(delta: float) -> void:
 	if not spawn_enabled:
 		return
+		
+	if is_debug:
+		_enforce_debug_minimums()
 	
 	_spawn_timer += delta
 	if _spawn_timer >= _next_spawn:
@@ -38,18 +52,35 @@ func _process(delta: float) -> void:
 		_next_spawn = randf_range(spawn_interval_min, spawn_interval_max)
 		_spawn_random()
 
+func _enforce_debug_minimums() -> void:
+	if enabled_types.get("mine", false) and _count_active("mine") < 1: _spawn_mine()
+	if enabled_types.get("cyclone", false) and _count_active("cyclone") < 1: _spawn_cyclone()
+	if enabled_types.get("missile", false) and _count_active("missile") < 1: _spawn_missile()
+	if enabled_types.get("power_up", false) and _count_active("power_up") < 1: _spawn_power_up()
+	if enabled_types.get("coin", false) and _count_active("coin") < 1: _spawn_coins()
+	# Crowd throws don't persist on court the same way, but we can bypass for now or spawn.
+	# We'll skip crowd throws minimums as they despawn instantly on hit.
+
 func _spawn_random() -> void:
-	# Weighted random selection
+	# Build weighted list from enabled types only
+	var active_weights: Dictionary = {}
+	for type in spawn_weights:
+		if enabled_types.get(type, true):
+			active_weights[type] = spawn_weights[type]
+	
+	if active_weights.is_empty():
+		return
+	
 	var total_weight = 0
-	for w in spawn_weights.values():
+	for w in active_weights.values():
 		total_weight += w
 	
 	var roll = randi() % total_weight
 	var cumulative = 0
-	var chosen = "mine"
+	var chosen = active_weights.keys()[0]
 	
-	for type in spawn_weights:
-		cumulative += spawn_weights[type]
+	for type in active_weights:
+		cumulative += active_weights[type]
 		if roll < cumulative:
 			chosen = type
 			break
@@ -60,10 +91,10 @@ func _spawn_random() -> void:
 			if _count_active("mine") >= max_mines:
 				return
 			_spawn_mine()
-		"saw_blade":
-			if _count_active("saw_blade") >= max_saw_blades:
+		"cyclone":
+			if _count_active("cyclone") >= max_cyclones:
 				return
-			_spawn_saw_blade()
+			_spawn_cyclone()
 		"missile":
 			if _count_active("missile") >= max_missiles:
 				return
@@ -111,9 +142,9 @@ func _spawn_mine() -> void:
 	mine.global_position = _get_safe_position()
 	get_tree().current_scene.add_child(mine)
 
-func _spawn_saw_blade() -> void:
+func _spawn_cyclone() -> void:
 	var blade = Node3D.new()
-	blade.set_script(load("res://scenes/hazards/saw_blade.gd"))
+	blade.set_script(load("res://scenes/hazards/cyclone.gd"))
 	
 	# Spawn from a random edge
 	var side = randi() % 4

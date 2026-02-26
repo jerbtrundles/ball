@@ -13,7 +13,9 @@ var court_half_length: float = 15.0  # court_length / 2
 var max_height: float = 8.0
 
 var holder: CharacterBody3D = null
+var last_shooter: CharacterBody3D = null
 var last_shooter_team: int = -1
+var previous_holder: CharacterBody3D = null
 var last_touch_team: int = -1  # Tracks which team last touched/held the ball
 var _was_shot: bool = false
 var _shot_origin: Vector3 = Vector3.ZERO  # Where the shot was taken from (for 3pt detection)
@@ -98,13 +100,17 @@ func is_held() -> bool:
 	return holder != null
 
 func set_holder(player: CharacterBody3D) -> void:
+	if holder != player:
+		previous_holder = holder
 	holder = player
 	if "team_index" in player:
 		last_touch_team = player.team_index
 	_was_shot = false
 
-func release(shooter_team: int = -1) -> void:
+func release(shooter: CharacterBody3D = null, shooter_team: int = -1) -> void:
 	holder = null
+	if shooter != null:
+		last_shooter = shooter
 	if shooter_team >= 0:
 		last_shooter_team = shooter_team
 		last_touch_team = shooter_team

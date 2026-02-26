@@ -4,14 +4,19 @@ func _ready() -> void:
 	# Connect buttons
 	var btn_quick = $VBoxContainer/BtnQuickMatch
 	var btn_season = $VBoxContainer/BtnNewSeason
+	var btn_debug = $VBoxContainer/BtnDebugGame
 	var btn_quit = $VBoxContainer/BtnQuit
 	
 	btn_quick.pressed.connect(_on_quick_match_pressed)
 	btn_season.pressed.connect(_on_new_season_pressed)
+	btn_debug.pressed.connect(_on_debug_pressed)
 	btn_quit.pressed.connect(_on_quit_pressed)
 	
 	# Grab focus for gamepad support
 	btn_quick.grab_focus()
+
+func _on_debug_pressed() -> void:
+	LeagueManager.start_debug_match()
 
 func _on_quick_match_pressed() -> void:
 	# Go to Quick Match Setup

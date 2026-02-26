@@ -168,6 +168,33 @@ func start_quick_match(team_a: Resource, team_b: Resource, config: Dictionary = 
 	
 	# Load the main court scene
 	get_tree().change_scene_to_file("res://scenes/court/court.tscn")
+
+func start_debug_match() -> void:
+	if divisions.is_empty():
+		generate_default_league()
+	
+	var team_a = divisions[0]["teams"][0]
+	var team_b = divisions[0]["teams"][1]
+	
+	var config = {
+		"quarter_duration": 9999.0, # Endless
+		"team_size": 1,             # 1v1
+		"items_enabled": true,
+		"enabled_items": {
+			"mine": true, "cyclone": true, "missile": true,
+			"power_up": true, "coin": true, "crowd_throw": true
+		},
+		"human_team_index": 0,
+		"is_debug": true            # Flag for GameManager
+	}
+	
+	pending_match_data = {
+		"team_a": team_a,
+		"team_b": team_b,
+		"config": config
+	}
+	
+	get_tree().change_scene_to_file("res://scenes/court/court.tscn")
 	
 func clear_pending_match() -> void:
 	pending_match_data.clear()

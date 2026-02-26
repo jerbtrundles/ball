@@ -11,6 +11,11 @@ extends CanvasLayer
 
 var game_manager: Node = null
 
+# Active gaudy message tweens (so we can kill them on re-trigger)
+var _gaudy_scale_tween: Tween = null
+var _gaudy_color_tween: Tween = null
+var _gaudy_rot_tween: Tween = null
+
 func _ready() -> void:
 	add_to_group("hud")
 	await get_tree().process_frame
@@ -39,15 +44,15 @@ func _ready() -> void:
 func _update_team_info(t0: Resource, t1: Resource) -> void:
 	if team0_name_label:
 		team0_name_label.text = t0.name
-		team0_name_label.modulate = t0.color_primary
+		team0_name_label.add_theme_color_override("font_color", t0.color_primary)
 	if team0_score_label:
-		team0_score_label.modulate = t0.color_primary
+		team0_score_label.add_theme_color_override("font_color", t0.color_primary)
 		
 	if team1_name_label:
 		team1_name_label.text = t1.name
-		team1_name_label.modulate = t1.color_primary
+		team1_name_label.add_theme_color_override("font_color", t1.color_primary)
 	if team1_score_label:
-		team1_score_label.modulate = t1.color_primary
+		team1_score_label.add_theme_color_override("font_color", t1.color_primary)
 
 func _on_score_changed(team_index: int, new_score: int) -> void:
 	if team_index == 0 and team0_score_label:
@@ -87,11 +92,9 @@ func _on_game_over(winner_team: int) -> void:
 
 func show_message(text: String, duration: float = 2.0, color: Color = Color.WHITE) -> void:
 	if message_label:
+		_kill_gaudy_tweens()
 		message_label.text = text
 		message_label.visible = true
-		
-		# Reset any previous tweens/transforms
-		var tween = create_tween()
 		message_label.scale = Vector2.ONE
 		message_label.rotation = 0
 		message_label.modulate = color
@@ -99,37 +102,107 @@ func show_message(text: String, duration: float = 2.0, color: Color = Color.WHIT
 		await get_tree().create_timer(duration).timeout
 		message_label.visible = false
 
-func show_gaudy_message(text: String, duration: float = 2.0) -> void:
-	if message_label:
-		message_label.text = text
-		message_label.visible = true
+func _kill_gaudy_tweens() -> void:
+	if _gaudy_scale_tween and _gaudy_scale_tween.is_valid():
+		_gaudy_scale_tween.kill()
+	if _gaudy_color_tween and _gaudy_color_tween.is_valid():
+		_gaudy_color_tween.kill()
+	if _gaudy_rot_tween and _gaudy_rot_tween.is_valid():
+		_gaudy_rot_tween.kill()
+	_gaudy_scale_tween = null
+	_gaudy_color_tween = null
+	_gaudy_rot_tween = null
+
+func show_gaudy_message(text: String, duration: float = 2.0, theme: String = "rainbow") -> void:
+	if not message_label:
+		return
+	
+	# Kill any existing gaudy animation (e.g. from picking up another coin in a cluster)
+	_kill_gaudy_tweens()
+	
+	message_label.text = text
+	message_label.visible = true
+	message_label.scale = Vector2.ONE
+	message_label.rotation = 0
+	
+	# GAUDY EFFECT — colors + scale pulse + wobble based on theme
+	
+	# Scale pulsing
+	_gaudy_scale_tween = create_tween()
+	_gaudy_scale_tween.set_loops()
+	
+	# Rainbow color cycling
+	_gaudy_color_tween = create_tween()
+	_gaudy_color_tween.set_loops()
+	
+	# Rotation wobble
+	_gaudy_rot_tween = create_tween()
+	_gaudy_rot_tween.set_loops()
+	
+	if theme == "ice":
+		# Slow, icy effect
+		_gaudy_scale_tween.tween_property(message_label, "scale", Vector2(1.2, 1.2), 0.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		_gaudy_scale_tween.tween_property(message_label, "scale", Vector2(1.0, 1.0), 0.6)
 		
-		# GAUDY EFFECT
-		# 1. Scale pulse
-		# 2. Color shifts (Rainbow)
-		# 3. Shake/Rotation
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color(0.6, 0.9, 1.0), 0.5)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color(0.2, 0.6, 1.0), 0.5)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color(0.8, 1.0, 1.0), 0.5)
 		
-		var tween = create_tween()
-		tween.set_loops() # Loop indefinitely until we kill it or hide
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(1.0), 0.8)
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(-1.0), 0.8)
+	elif theme == "gold":
+		# Golden accuracy bonus
+		_gaudy_scale_tween.tween_property(message_label, "scale", Vector2(1.3, 1.3), 0.2).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+		_gaudy_scale_tween.tween_property(message_label, "scale", Vector2(1.0, 1.0), 0.25)
 		
-		# Pulse scale
-		tween.tween_property(message_label, "scale", Vector2(1.5, 1.5), 0.2).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
-		tween.tween_property(message_label, "scale", Vector2(1.0, 1.0), 0.2)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.GOLD, 0.2)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.WHITE, 0.2)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.YELLOW, 0.2)
 		
-		# Color cycling (Rainbow-ish)
-		var color_tween = create_tween()
-		color_tween.set_loops()
-		color_tween.tween_property(message_label, "modulate", Color.GOLD, 0.2)
-		color_tween.tween_property(message_label, "modulate", Color.CYAN, 0.2)
-		color_tween.tween_property(message_label, "modulate", Color.MAGENTA, 0.2)
-		color_tween.tween_property(message_label, "modulate", Color.GREEN, 0.2)
-		color_tween.tween_property(message_label, "modulate", Color.WHITE, 0.2)
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(2.0), 0.15)
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(-2.0), 0.15)
+	elif theme == "green":
+		# Fast, energetic green speed boost
+		_gaudy_scale_tween.tween_property(message_label, "scale", Vector2(1.5, 1.5), 0.15).set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
+		_gaudy_scale_tween.tween_property(message_label, "scale", Vector2(1.0, 1.0), 0.2)
 		
-		await get_tree().create_timer(duration).timeout
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.GREEN_YELLOW, 0.15)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.LIME_GREEN, 0.15)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.WHITE, 0.15)
 		
-		# Cleanup
-		tween.kill()
-		color_tween.kill()
-		message_label.visible = false
-		message_label.scale = Vector2.ONE
-		message_label.modulate = Color.WHITE
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(4.0), 0.1)
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(-4.0), 0.1)
+	elif theme == "red":
+		# Aggressive red tackle boost
+		_gaudy_scale_tween.tween_property(message_label, "scale", Vector2(1.6, 1.6), 0.1).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+		_gaudy_scale_tween.tween_property(message_label, "scale", Vector2(1.0, 1.0), 0.2)
+		
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.RED, 0.1)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.ORANGE_RED, 0.1)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.WHITE, 0.1)
+		
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(6.0), 0.05)
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(-6.0), 0.05)
+	else:
+		# Default rainbow
+		_gaudy_scale_tween.tween_property(message_label, "scale", Vector2(1.4, 1.4), 0.3).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+		_gaudy_scale_tween.tween_property(message_label, "scale", Vector2(1.0, 1.0), 0.3)
+		
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.GOLD, 0.25)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.CYAN, 0.25)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.MAGENTA, 0.25)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.LIME_GREEN, 0.25)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.WHITE, 0.25)
+		_gaudy_color_tween.tween_property(message_label, "modulate", Color.ORANGE, 0.25)
+		
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(2.0), 0.2)
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(-2.0), 0.2)
+	
+	await get_tree().create_timer(duration).timeout
+	
+	# Cleanup (only if our tweens are still active)
+	_kill_gaudy_tweens()
+	message_label.visible = false
+	message_label.scale = Vector2.ONE
+	message_label.rotation = 0
+	message_label.modulate = Color.WHITE

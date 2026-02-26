@@ -1,9 +1,4 @@
-res://scenes/ball/ball.gd
-res://scripts/game_manager.gd
-res://scenes/items/coin.gd
-res://ui/hud.gd
-res://scenes/characters/player.gd
-res://scripts/managers/league_manager.gd
-res://ui/main_menu.gd
-res://scripts/data/team_data.gd
+res://resources/court_themes/court_theme.gd
+res://scenes/court/court_builder.gd
+res://scripts/managers/court_themes.gd
 res://ui/quick_match_setup.gd

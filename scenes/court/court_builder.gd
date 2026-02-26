@@ -12,8 +12,42 @@ var floor_material: StandardMaterial3D
 var wall_material: StandardMaterial3D
 var line_material: StandardMaterial3D
 var hoop_material: StandardMaterial3D
+var _current_theme: CourtTheme = null
+var _floor_mesh: MeshInstance3D = null  # Stored so we can swap materials on theme change
+
+func apply_theme(theme: CourtTheme) -> void:
+	if theme == null:
+		return
+		
+	_current_theme = theme
+	
+	if floor_material:
+		floor_material.albedo_color = theme.floor_color
+	if wall_material:
+		wall_material.albedo_color = theme.wall_color
+	if line_material:
+		line_material.albedo_color = theme.line_color
+		line_material.emission = theme.line_color
+		line_material.emission_energy_multiplier = 2.5 if theme.glow_enabled else 0.5
+	if hoop_material:
+		hoop_material.albedo_color = theme.hoop_color
+		hoop_material.emission = theme.hoop_color
+		hoop_material.emission_energy_multiplier = 2.0 if theme.glow_enabled else 0.5
+	
+	# Animated floor override
+	if _floor_mesh:
+		if theme.animated_floor:
+			_floor_mesh.material_override = _build_animated_floor_material(theme)
+		else:
+			_floor_mesh.material_override = floor_material
+			if floor_material:
+				floor_material.albedo_color = theme.floor_color
+		
+	# Apply lighting changes immediately
+	_apply_theme_lighting()
 
 func _ready() -> void:
+	add_to_group("court_builder")
 	_create_materials()
 	_build_floor()
 	_build_walls()
@@ -53,19 +87,24 @@ func _create_materials() -> void:
 	hoop_material.roughness = 0.3
 
 func _build_floor() -> void:
+	# Floor extends 2m beyond court bounds on each end for inbound passers
+	var floor_z_extent = court_length + 4.0
+	
 	var floor_mesh = MeshInstance3D.new()
+	floor_mesh.name = "FloorMesh"
 	var box = BoxMesh.new()
-	box.size = Vector3(court_width, 0.2, court_length)
+	box.size = Vector3(court_width, 0.2, floor_z_extent)
 	floor_mesh.mesh = box
 	floor_mesh.material_override = floor_material
 	floor_mesh.position = Vector3(0, -0.1, 0)
 	add_child(floor_mesh)
+	_floor_mesh = floor_mesh
 	
 	# Floor collision
 	var floor_body = StaticBody3D.new()
 	var floor_col = CollisionShape3D.new()
 	var floor_shape = BoxShape3D.new()
-	floor_shape.size = Vector3(court_width, 0.2, court_length)
+	floor_shape.size = Vector3(court_width, 0.2, floor_z_extent)
 	floor_col.shape = floor_shape
 	floor_body.position = Vector3(0, -0.1, 0)
 	floor_body.add_child(floor_col)
@@ -73,11 +112,21 @@ func _build_floor() -> void:
 	add_child(floor_body)
 
 func _build_walls() -> void:
-	# Four walls around the court
+	# Four walls around the court, but North and South have a gap in the middle for inbounders
+	var half_w = court_width / 2.0
+	var gap_w = 2.0  # 2m gap in the center of the endlines
+	var wall_w = (court_width - gap_w) / 2.0 + wall_thickness
+	
 	var wall_configs = [
-		# [position, size]
-		[Vector3(0, wall_height / 2, -court_length / 2 - wall_thickness / 2), Vector3(court_width + wall_thickness * 2, wall_height, wall_thickness)],  # North
-		[Vector3(0, wall_height / 2, court_length / 2 + wall_thickness / 2), Vector3(court_width + wall_thickness * 2, wall_height, wall_thickness)],   # South
+		# North wall (split)
+		[Vector3(-half_w + wall_w/2.0 - wall_thickness/2.0, wall_height / 2, -court_length / 2 - wall_thickness / 2), Vector3(wall_w, wall_height, wall_thickness)], # North Left
+		[Vector3(half_w - wall_w/2.0 + wall_thickness/2.0, wall_height / 2, -court_length / 2 - wall_thickness / 2), Vector3(wall_w, wall_height, wall_thickness)],  # North Right
+		
+		# South wall (split)
+		[Vector3(-half_w + wall_w/2.0 - wall_thickness/2.0, wall_height / 2, court_length / 2 + wall_thickness / 2), Vector3(wall_w, wall_height, wall_thickness)],  # South Left
+		[Vector3(half_w - wall_w/2.0 + wall_thickness/2.0, wall_height / 2, court_length / 2 + wall_thickness / 2), Vector3(wall_w, wall_height, wall_thickness)],   # South Right
+		
+		# West / East walls (solid)
 		[Vector3(-court_width / 2 - wall_thickness / 2, wall_height / 2, 0), Vector3(wall_thickness, wall_height, court_length)],  # West
 		[Vector3(court_width / 2 + wall_thickness / 2, wall_height / 2, 0), Vector3(wall_thickness, wall_height, court_length)],   # East
 	]
@@ -207,9 +256,6 @@ func _build_court_lines() -> void:
 		_add_line(Vector3(corner_x_left, lh, (endline_z + corner_z) / 2), Vector3(lw, 0.02, corner_len))
 		# Right corner
 		_add_line(Vector3(corner_x_right, lh, (endline_z + corner_z) / 2), Vector3(lw, 0.02, corner_len))
-		
-		# === Restricted area arc (small semi-circle under basket) ===
-		_add_arc(Vector3(0, lh, basket_z), 1.2, -end_z_sign, 16)
 
 func _add_line(pos: Vector3, size: Vector3) -> void:
 	var mesh_instance = MeshInstance3D.new()
@@ -423,6 +469,7 @@ func _on_score_trigger(body: Node3D, hoop_team: int) -> void:
 func _build_lighting() -> void:
 	# Main overhead lights (arena feel)
 	var main_light = DirectionalLight3D.new()
+	main_light.name = "MainLight"
 	main_light.rotation_degrees = Vector3(-60, 30, 0)
 	main_light.light_energy = 0.8
 	main_light.light_color = Color(0.9, 0.92, 1.0)
@@ -431,6 +478,7 @@ func _build_lighting() -> void:
 	
 	# Ambient fill
 	var env = WorldEnvironment.new()
+	env.name = "WorldEnv"
 	var environment = Environment.new()
 	environment.background_mode = Environment.BG_COLOR
 	environment.background_color = Color(0.02, 0.02, 0.06)
@@ -447,6 +495,7 @@ func _build_lighting() -> void:
 	# Spot lights on each hoop for drama
 	for i in range(2):
 		var spot = SpotLight3D.new()
+		spot.name = "HoopSpot_%d" % i
 		var z = -court_length / 2 + 1.5 if i == 0 else court_length / 2 - 1.5
 		spot.position = Vector3(0, 8, z)
 		spot.rotation_degrees = Vector3(-90, 0, 0)
@@ -459,8 +508,137 @@ func _build_lighting() -> void:
 	# Side neon accent lights
 	for side in [-1, 1]:
 		var neon = OmniLight3D.new()
+		neon.name = "NeonAccent_%d" % (side + 2)
 		neon.position = Vector3(side * court_width / 2, 2, 0)
 		neon.light_energy = 1.5
 		neon.light_color = Color(0.0, 0.8, 1.0)
 		neon.omni_range = 8.0
 		add_child(neon)
+		
+	# Setup initial theme lighting if it was provided early
+	if _current_theme != null:
+		_apply_theme_lighting()
+
+func _apply_theme_lighting() -> void:
+	if _current_theme == null: return
+	
+	var main_light: DirectionalLight3D = get_node_or_null("MainLight")
+	if main_light:
+		main_light.light_color = _current_theme.main_light_color
+		
+	var env_node: WorldEnvironment = get_node_or_null("WorldEnv")
+	if env_node and env_node.environment:
+		env_node.environment.background_color = _current_theme.ambient_color
+		env_node.environment.ambient_light_color = _current_theme.ambient_color.lightened(0.1)
+		env_node.environment.glow_enabled = _current_theme.glow_enabled
+		env_node.environment.glow_intensity = 1.2 if _current_theme.glow_enabled else 0.0
+		env_node.environment.glow_bloom = 0.4 if _current_theme.glow_enabled else 0.0
+		
+	# Update hoop spotlights
+	for i in range(2):
+		var spot: SpotLight3D = get_node_or_null("HoopSpot_%d" % i)
+		if spot:
+			spot.light_color = _current_theme.spotlight_color
+		
+	# Update neon accents
+	for i in range(1, 4):
+		var neon: OmniLight3D = get_node_or_null("NeonAccent_%d" % i)
+		if neon:
+			neon.light_color = _current_theme.line_color
+			neon.light_energy = 2.0 if _current_theme.glow_enabled else 0.8
+
+## Builds a ShaderMaterial with animated sweeping stripes + ripples for the Cyber Grid court.
+func _build_animated_floor_material(theme: CourtTheme) -> ShaderMaterial:
+	var mat = ShaderMaterial.new()
+	var shader = Shader.new()
+	shader.code = """
+shader_type spatial;
+render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
+
+// === Theme colors ===
+uniform vec3 base_color   : source_color = vec3(0.03, 0.02, 0.08);
+uniform vec3 stripe_color : source_color = vec3(0.55, 0.0, 1.0);
+uniform vec3 cross_color  : source_color = vec3(0.1, 0.8, 1.0);
+uniform vec3 ripple_color : source_color = vec3(0.3, 0.05, 0.55);
+
+// Court dimensions
+uniform float court_length = 34.0;
+uniform float court_width  = 16.0;
+
+// Timing
+uniform float sweep_speed  = 0.18;
+uniform float cross_speed  = 0.11;
+uniform float pulse_speed  = 0.35;
+uniform float ripple_speed = 0.9;    // How fast rings expand outward
+
+// Intensity  (all kept intentionally low for subtlety)
+uniform float stripe_sharpness  = 9.0;
+uniform float cross_sharpness   = 12.0;
+uniform float stripe_brightness = 0.18;
+uniform float cross_brightness  = 0.10;
+uniform float ripple_brightness = 0.09;
+uniform float pulse_amplitude   = 0.04;
+
+void fragment() {
+	float world_x = (UV.x - 0.5) * court_width;
+	float world_z = (UV.y - 0.5) * court_length;
+
+	// -------------------------------------------------------
+	// 1. Concentric ripples expanding from court centre
+	//    Rings spaced ~2m apart, slowish outward drift.
+	// -------------------------------------------------------
+	float dist = length(vec2(world_x, world_z));
+	float ring_phase = dist * 0.5 - TIME * ripple_speed;
+	float rings = sin(ring_phase) * 0.5 + 0.5;
+	// Sharpen into thin glowing bands
+	rings = pow(rings, 5.0);
+	// Fade rings out beyond ~half the court length so they disappear naturally
+	float ripple_fade = smoothstep(court_length * 0.55, court_length * 0.1, dist);
+	float ripple = rings * ripple_fade;
+
+	// -------------------------------------------------------
+	// 2. Diagonal sweep (travels along +Z, slight angle)
+	// -------------------------------------------------------
+	float diag = (world_z / court_length) + (world_x / court_width) * 0.35;
+	float sweep_phase = fract(diag - TIME * sweep_speed);
+	float sweep = pow(max(0.0, 1.0 - abs(sweep_phase - 0.5) * stripe_sharpness), 2.0);
+	float edge_z = smoothstep(0.0, 0.12, UV.y) * smoothstep(1.0, 0.88, UV.y);
+	sweep *= edge_z;
+
+	// -------------------------------------------------------
+	// 3. Cross sweep (travels along -X, slower)
+	// -------------------------------------------------------
+	float cross_diag = (world_x / court_width) - (world_z / court_length) * 0.2;
+	float cross_phase = fract(cross_diag - TIME * cross_speed);
+	float cross_sweep = pow(max(0.0, 1.0 - abs(cross_phase - 0.5) * cross_sharpness), 2.0);
+	float edge_x = smoothstep(0.0, 0.12, UV.x) * smoothstep(1.0, 0.88, UV.x);
+	cross_sweep *= edge_x;
+
+	// -------------------------------------------------------
+	// 4. Global dim pulse
+	// -------------------------------------------------------
+	float pulse = sin(TIME * pulse_speed) * 0.5 + 0.5;
+
+	// -------------------------------------------------------
+	// Combine — keep base very dark, add effects additively
+	// -------------------------------------------------------
+	vec3 col = base_color;
+	col += ripple_color * ripple * ripple_brightness * (0.7 + pulse * 0.3);
+	col += stripe_color * sweep * stripe_brightness;
+	col += cross_color  * cross_sweep * cross_brightness;
+	col += base_color   * pulse * pulse_amplitude;
+
+	ALBEDO    = col;
+	EMISSION  = col * 0.4;   // Gentle glow — no longer blinding
+	ROUGHNESS = 0.2;
+	METALLIC  = 0.6;
+}
+"""
+	mat.shader = shader
+	mat.set_shader_parameter("base_color",   Vector3(theme.floor_color.r, theme.floor_color.g, theme.floor_color.b))
+	mat.set_shader_parameter("stripe_color", Vector3(theme.line_color.r, theme.line_color.g, theme.line_color.b))
+	mat.set_shader_parameter("cross_color",  Vector3(theme.hoop_color.r, theme.hoop_color.g, theme.hoop_color.b))
+	mat.set_shader_parameter("ripple_color", Vector3(theme.floor_accent_color.r, theme.floor_accent_color.g, theme.floor_accent_color.b))
+	mat.set_shader_parameter("court_length", court_length + 4.0)
+	mat.set_shader_parameter("court_width",  court_width)
+	return mat

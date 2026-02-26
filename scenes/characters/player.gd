@@ -9,6 +9,7 @@ signal call_for_pass(requester: CharacterBody3D)  # Fired when player wants a te
 
 # --- Team ---
 @export var team_index: int = 0
+@export var roster_index: int = -1
 @export var player_name: String = "Player"
 @export var is_human: bool = false
 
@@ -87,6 +88,9 @@ var _left_arm_pivot: Node3D = null
 var _right_arm_pivot: Node3D = null
 var _arm_tween: Tween = null
 var custom_team_color: Color = Color(0, 0, 0, 0) # If alpha > 0, overrides team_index color
+
+var _buff_indicator_mesh: MeshInstance3D = null
+var _buff_indicator_mat: StandardMaterial3D = null
 
 func _setup_visuals() -> void:
 	var color = team_colors[team_index] if team_index < team_colors.size() else Color.WHITE
@@ -206,8 +210,22 @@ func _setup_visuals() -> void:
 		ring_mat.albedo_color.a = 0.7
 		ring.material_override = ring_mat
 		ring.position = Vector3(0, 0.05, 0)
-		# ring.rotation.x = PI / 2  # Removed to make it flat on the ground
 		add_child(ring)
+
+	# --- Buff Indicator Ring (hidden by default) ---
+	_buff_indicator_mesh = MeshInstance3D.new()
+	_buff_indicator_mesh.name = "BuffRing"
+	var buff_mesh = TorusMesh.new()
+	buff_mesh.inner_radius = 0.5
+	buff_mesh.outer_radius = 0.65
+	_buff_indicator_mesh.mesh = buff_mesh
+	_buff_indicator_mat = StandardMaterial3D.new()
+	_buff_indicator_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_buff_indicator_mat.emission_enabled = true
+	_buff_indicator_mesh.material_override = _buff_indicator_mat
+	_buff_indicator_mesh.position = Vector3(0, 0.06, 0) # Just above human ring
+	_buff_indicator_mesh.visible = false
+	add_child(_buff_indicator_mesh)
 
 # --- Arm animations ---
 
@@ -255,7 +273,12 @@ func _physics_process(delta: float) -> void:
 	if tackle_cooldown > 0:
 		tackle_cooldown -= delta
 	
-	# Buff timer
+	# Buff timer and animation
+	if _buff_indicator_mesh and _buff_indicator_mesh.visible:
+		_buff_indicator_mesh.rotation.y += delta * 2.0
+		var pulse = (sin(Time.get_ticks_msec() / 150.0) + 1.0) / 2.0
+		_buff_indicator_mat.emission_energy_multiplier = 1.0 + pulse * 2.0
+		
 	if buff_timer > 0:
 		buff_timer -= delta
 		if buff_timer <= 0:
@@ -277,6 +300,10 @@ func _physics_process(delta: float) -> void:
 			celebrate_timer -= delta
 			if celebrate_timer <= 0:
 				current_state = State.IDLE
+			# Keep floor contact while celebrating
+			if not is_on_floor():
+				velocity.y -= 20.0 * delta
+			move_and_slide()
 	
 	# Update facing
 	if input_aim.length() > 0.1:
@@ -296,6 +323,11 @@ func _physics_process(delta: float) -> void:
 		held_ball.global_position = global_position + ball_offset
 		held_ball.linear_velocity = Vector3.ZERO
 		held_ball.angular_velocity = Vector3.ZERO
+	
+	# --- Floor safety: prevent falling through the court ---
+	if global_position.y < -1.0:
+		global_position.y = 0.5
+		velocity.y = 0
 
 func _process_movement(delta: float) -> void:
 	var speed = sprint_speed if input_sprint else move_speed
@@ -570,9 +602,15 @@ func pass_to_player(target: CharacterBody3D) -> void:
 	
 	var ball_node = get_tree().get_nodes_in_group("ball")
 	if ball_node.size() > 0:
+		var b = ball_node[0]
+		# Zero residual velocity before applying pass impulse
+		b.linear_velocity = Vector3.ZERO
+		b.angular_velocity = Vector3.ZERO
+		# Prevent immediate OOB re-trigger when passing from out of bounds
+		b._oob_cooldown = 3.0
 		# Scale power: at least pass_power, more for longer distances
 		var power = max(pass_power, pass_dist * 3.0)
-		ball_node[0].apply_impulse(pass_dir * power)
+		b.apply_impulse(pass_dir * power)
 	
 	current_state = State.IDLE
 
@@ -647,6 +685,13 @@ func receive_tackle(attacker: CharacterBody3D, direction: Vector3) -> void:
 		if ball_nodes.size() > 0:
 			var fumble_dir = Vector3(randf_range(-1, 1), 0.5, randf_range(-1, 1)).normalized()
 			ball_nodes[0].apply_impulse(fumble_dir * 5.0)
+		
+		# Record steal for attacker
+		if attacker != null and "team_index" in attacker and "roster_index" in attacker:
+			if attacker.team_index != team_index:
+				var gm = _get_game_manager()
+				if gm and gm.has_method("record_stat"):
+					gm.record_stat(attacker.team_index, attacker.roster_index, "steals")
 	was_tackled.emit()
 	# Visual: flatten mesh to show player is down
 	if mesh:
@@ -691,15 +736,34 @@ func apply_buff(buff_type: String, duration: float = 8.0) -> void:
 	active_buff = buff_type
 	buff_timer = duration
 	
+	if _buff_indicator_mesh and _buff_indicator_mat:
+		_buff_indicator_mesh.visible = true
+	
 	match buff_type:
 		"speed":
 			move_speed = _base_move_speed * 1.5
 			sprint_speed = _base_sprint_speed * 1.5
+			if _buff_indicator_mat:
+				_buff_indicator_mat.albedo_color = Color(0.1, 1.0, 0.3, 0.6)
+				_buff_indicator_mat.emission = Color(0.1, 1.0, 0.3)
 		"accuracy":
-			pass  # Accuracy checked in _calculate_shot_percentage
+			# Accuracy checked in _calculate_shot_percentage
+			if _buff_indicator_mat:
+				_buff_indicator_mat.albedo_color = Color(1.0, 0.8, 0.1, 0.6)
+				_buff_indicator_mat.emission = Color(1.0, 0.8, 0.1)
 		"tackle":
 			tackle_force = _base_tackle_force * 2.0
 			tackle_range = _base_tackle_range * 1.5
+			if _buff_indicator_mat:
+				_buff_indicator_mat.albedo_color = Color(1.0, 0.2, 0.2, 0.6)
+				_buff_indicator_mat.emission = Color(1.0, 0.2, 0.2)
+		"freeze":
+			# Slows down the player
+			move_speed = _base_move_speed * 0.5
+			sprint_speed = _base_sprint_speed * 0.5
+			if _buff_indicator_mat:
+				_buff_indicator_mat.albedo_color = Color(0.3, 0.8, 1.0, 0.6) # Icy cyan
+				_buff_indicator_mat.emission = Color(0.3, 0.8, 1.0)
 
 func _expire_buff() -> void:
 	if _base_move_speed > 0:
@@ -709,6 +773,9 @@ func _expire_buff() -> void:
 		tackle_range = _base_tackle_range
 	active_buff = ""
 	buff_timer = 0.0
+	
+	if _buff_indicator_mesh:
+		_buff_indicator_mesh.visible = false
 
 func _process_tackle(delta: float) -> void:
 	# Decelerate during tackle
@@ -735,6 +802,13 @@ func pickup_ball(ball_body: RigidBody3D) -> void:
 		return
 	has_ball = true
 	held_ball = ball_body
+	
+	# Check for rebound before resetting was_shot
+	if ball_body.get("_was_shot") == true:
+		var gm = _get_game_manager()
+		if gm and gm.has_method("record_stat"):
+			gm.record_stat(team_index, roster_index, "rebounds")
+			
 	ball_body.linear_velocity = Vector3.ZERO
 	ball_body.angular_velocity = Vector3.ZERO
 	if ball_body.has_method("set_holder"):
@@ -746,7 +820,7 @@ func _release_ball() -> void:
 	if held_ball:
 		held_ball.freeze = false  # Always unfreeze when releasing
 		if held_ball.has_method("release"):
-			held_ball.release(team_index)
+			held_ball.release(self, team_index)
 	lost_ball.emit()
 
 func _on_ball_entered(body: Node3D) -> void:

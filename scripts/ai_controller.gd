@@ -194,10 +194,21 @@ func _move_toward(target: Vector3, sprint: bool) -> void:
 func _find_open_position() -> void:
 	var game_mgr = get_tree().get_first_node_in_group("game_manager")
 	var target_hoop = Vector3(0, 3.0, 14.0)
+	var defend_hoop = Vector3(0, 3.0, -14.0)
 	if game_mgr and game_mgr.has_method("get_target_hoop"):
 		target_hoop = game_mgr.get_target_hoop(player.team_index)
+		defend_hoop = game_mgr.get_target_hoop(1 - player.team_index) # Other team's target is our defense
 	
-	# Find a spot roughly between current position and the hoop, with some randomness
+	var ball_node = _get_ball()
+	if ball_node and ball_node.is_held():
+		if "team_index" in ball_node.holder and ball_node.holder.team_index != player.team_index:
+			# Opponent has ball: defend the hoop!
+			# Post up halfway between the ball carrier and our defensive hoop
+			var offset = Vector3(randf_range(-3, 3), 0, randf_range(-2, 2))
+			current_target = (ball_node.holder.global_position + defend_hoop) * 0.4 + offset
+			return
+			
+	# Teammate has ball: find an open offensive spot
 	var offset = Vector3(randf_range(-5, 5), 0, randf_range(-3, 3))
 	current_target = (player.global_position + target_hoop) * 0.5 + offset
 

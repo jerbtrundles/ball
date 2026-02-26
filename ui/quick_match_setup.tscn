@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3 uid="uid://quick_match_setup_scene"]
+[gd_scene format=3 uid="uid://bdp40ybqppmt6"]
 
-[ext_resource type="Script" path="res://ui/quick_match_setup.gd" id="1_quick_match_setup"]
+[ext_resource type="Script" uid="uid://wjt8qrcqv18l" path="res://ui/quick_match_setup.gd" id="1_quick_match_setup"]
 
-[node name="QuickMatchSetup" type="Control"]
+[node name="QuickMatchSetup" type="Control" unique_id=973566143]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -11,160 +11,317 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_quick_match_setup")
 
-[node name="ColorRect" type="ColorRect" parent="."]
+[node name="Background" type="ColorRect" parent="." unique_id=1412935528]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.1, 0.1, 0.2, 1)
+color = Color(0.05, 0.05, 0.12, 1)
 
-[node name="VBoxContainer" type="VBoxContainer" parent="."]
+[node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=1738970573]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -400.0
-offset_top = -250.0
-offset_right = 400.0
-offset_bottom = 250.0
+offset_left = -460.0
+offset_top = -310.0
+offset_right = 460.0
+offset_bottom = 310.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 20
+theme_override_constants/separation = 10
 
-[node name="Label" type="Label" parent="VBoxContainer"]
+[node name="Title" type="Label" parent="VBoxContainer" unique_id=1065204247]
 layout_mode = 2
 theme_override_font_sizes/font_size = 48
-text = "MATCH SETUP"
+text = "QUICK MATCH"
 horizontal_alignment = 1
 
-[node name="HBox_Teams" type="HBoxContainer" parent="VBoxContainer"]
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer" unique_id=430494512]
 layout_mode = 2
-theme_override_constants/separation = 40
+
+[node name="HBox_Teams" type="HBoxContainer" parent="VBoxContainer" unique_id=1344500752]
+layout_mode = 2
+theme_override_constants/separation = 20
 alignment = 1
 
-[node name="VBox_TeamA" type="VBoxContainer" parent="VBoxContainer/HBox_Teams"]
-custom_minimum_size = Vector2(250, 0)
+[node name="VBox_TeamA" type="VBoxContainer" parent="VBoxContainer/HBox_Teams" unique_id=1280289170]
+custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
+theme_override_constants/separation = 4
 alignment = 1
 
-[node name="Label_Header" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamA"]
+[node name="Label_Header" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=826545166]
 layout_mode = 2
-text = "TEAM A"
+theme_override_font_sizes/font_size = 11
+text = "HOME"
 horizontal_alignment = 1
 
-[node name="LogoRect" type="TextureRect" parent="VBoxContainer/HBox_Teams/VBox_TeamA"]
-custom_minimum_size = Vector2(128, 128)
+[node name="BtnUp" type="Button" parent="VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=870885716]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "▲"
+flat = true
+
+[node name="LogoRect" type="TextureRect" parent="VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=1185547767]
+custom_minimum_size = Vector2(80, 80)
 layout_mode = 2
 stretch_mode = 5
 
-[node name="TeamName" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamA"]
+[node name="TeamName" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=1711092275]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "Red Team"
+text = "Team A"
 horizontal_alignment = 1
 
-[node name="NavHint" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamA"]
+[node name="BtnDown" type="Button" parent="VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=528926888]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
-text = "^ PREV   v NEXT"
-horizontal_alignment = 1
+theme_override_font_sizes/font_size = 16
+text = "▼"
+flat = true
 
-[node name="VS_Label" type="Label" parent="VBoxContainer/HBox_Teams"]
+[node name="VS_Label" type="Label" parent="VBoxContainer/HBox_Teams" unique_id=585727985]
 layout_mode = 2
-theme_override_font_sizes/font_size = 64
+theme_override_font_sizes/font_size = 48
 text = "VS"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="VBox_TeamB" type="VBoxContainer" parent="VBoxContainer/HBox_Teams"]
-custom_minimum_size = Vector2(250, 0)
+[node name="VBox_TeamB" type="VBoxContainer" parent="VBoxContainer/HBox_Teams" unique_id=315274769]
+custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
+theme_override_constants/separation = 4
 alignment = 1
 
-[node name="Label_Header" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamB"]
+[node name="Label_Header" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=762208836]
 layout_mode = 2
-text = "TEAM B"
+theme_override_font_sizes/font_size = 11
+text = "AWAY"
 horizontal_alignment = 1
 
-[node name="LogoRect" type="TextureRect" parent="VBoxContainer/HBox_Teams/VBox_TeamB"]
-custom_minimum_size = Vector2(128, 128)
+[node name="BtnUp" type="Button" parent="VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=1255751958]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "▲"
+flat = true
+
+[node name="LogoRect" type="TextureRect" parent="VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=1187915855]
+custom_minimum_size = Vector2(80, 80)
 layout_mode = 2
 stretch_mode = 5
 
-[node name="TeamName" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamB"]
+[node name="TeamName" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=584400462]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "Blue Team"
+text = "Team B"
 horizontal_alignment = 1
 
-[node name="NavHint" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamB"]
+[node name="BtnDown" type="Button" parent="VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=860891780]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
-text = "^ PREV   v NEXT"
+theme_override_font_sizes/font_size = 16
+text = "▼"
+flat = true
+
+[node name="SideSelector" type="HBoxContainer" parent="VBoxContainer" unique_id=652918863]
+layout_mode = 2
+theme_override_constants/separation = 4
+alignment = 1
+
+[node name="ZoneA" type="PanelContainer" parent="VBoxContainer/SideSelector" unique_id=1093807549]
+custom_minimum_size = Vector2(180, 36)
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/SideSelector/ZoneA" unique_id=1779844796]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "🎮"
 horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
+[node name="ZoneSpec" type="PanelContainer" parent="VBoxContainer/SideSelector" unique_id=934501863]
+custom_minimum_size = Vector2(140, 36)
 layout_mode = 2
 
-[node name="HBox_Quarters" type="HBoxContainer" parent="VBoxContainer"]
+[node name="Label" type="Label" parent="VBoxContainer/SideSelector/ZoneSpec" unique_id=782600819]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "AI vs AI"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ZoneB" type="PanelContainer" parent="VBoxContainer/SideSelector" unique_id=1763596211]
+custom_minimum_size = Vector2(180, 36)
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/SideSelector/ZoneB" unique_id=1912238783]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer" unique_id=1022029730]
+layout_mode = 2
+
+[node name="OptionsPanel" type="PanelContainer" parent="VBoxContainer" unique_id=25021657]
+layout_mode = 2
+
+[node name="OptionsVBox" type="VBoxContainer" parent="VBoxContainer/OptionsPanel" unique_id=2123080727]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HBox_TeamSize" type="HBoxContainer" parent="VBoxContainer/OptionsPanel/OptionsVBox" unique_id=1209028452]
 layout_mode = 2
 alignment = 1
 
-[node name="Label" type="Label" parent="VBoxContainer/HBox_Quarters"]
-custom_minimum_size = Vector2(150, 0)
+[node name="Label" type="Label" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize" unique_id=335137022]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
-text = "Quarter Length:"
+theme_override_font_sizes/font_size = 15
+text = "Team Size"
+horizontal_alignment = 2
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBox_Quarters"]
-custom_minimum_size = Vector2(200, 0)
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize" unique_id=1478319706]
+custom_minimum_size = Vector2(220, 0)
 layout_mode = 2
 
-[node name="HBox_Items" type="HBoxContainer" parent="VBoxContainer"]
+[node name="HBox_Quarters" type="HBoxContainer" parent="VBoxContainer/OptionsPanel/OptionsVBox" unique_id=1924610218]
 layout_mode = 2
 alignment = 1
 
-[node name="Label" type="Label" parent="VBoxContainer/HBox_Items"]
-custom_minimum_size = Vector2(150, 0)
+[node name="Label" type="Label" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters" unique_id=1085512352]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
-text = "Items / Hazards:"
+theme_override_font_sizes/font_size = 15
+text = "Quarter Length"
+horizontal_alignment = 2
 
-[node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBox_Items"]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters" unique_id=780795262]
+custom_minimum_size = Vector2(220, 0)
 layout_mode = 2
-button_pressed = true
-text = "Enabled"
 
-[node name="HBox_Side" type="HBoxContainer" parent="VBoxContainer"]
+[node name="HBox_Court" type="HBoxContainer" parent="VBoxContainer/OptionsPanel/OptionsVBox" unique_id=1609812345]
 layout_mode = 2
 alignment = 1
 
-[node name="Label" type="Label" parent="VBoxContainer/HBox_Side"]
-custom_minimum_size = Vector2(150, 0)
+[node name="Label" type="Label" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812346]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
-text = "Player Side:"
+theme_override_font_sizes/font_size = 15
+text = "Court"
+horizontal_alignment = 2
 
-[node name="SideLabel" type="Label" parent="VBoxContainer/HBox_Side"]
-custom_minimum_size = Vector2(250, 0)
+[node name="BtnCourtPrev" type="Button" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812347]
 layout_mode = 2
-text = "Team A Name"
-horizontal_alignment = 1
+theme_override_font_sizes/font_size = 16
+text = "◀"
+flat = true
 
-[node name="NavHint" type="Label" parent="VBoxContainer/HBox_Side"]
+[node name="CourtCardsContainer" type="HBoxContainer" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812348]
+custom_minimum_size = Vector2(220, 52)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
-text = "< CHANGE >"
+alignment = 1
+theme_override_constants/separation = 5
 
-[node name="HSeparator2" type="HSeparator" parent="VBoxContainer"]
+[node name="BtnCourtNext" type="Button" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812349]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "▶"
+flat = true
+
+[node name="HBox_Items" type="HBoxContainer" parent="VBoxContainer/OptionsPanel/OptionsVBox" unique_id=42832367]
+layout_mode = 2
+alignment = 1
+
+[node name="Label" type="Label" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items" unique_id=1179267719]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Items / Hazards"
+horizontal_alignment = 2
+
+[node name="BtnItems" type="Button" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items" unique_id=1240788244]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+text = "All Enabled ▸"
+
+[node name="HSeparator3" type="HSeparator" parent="VBoxContainer" unique_id=597291888]
 layout_mode = 2
 
-[node name="BtnStart" type="Button" parent="VBoxContainer"]
+[node name="BtnStart" type="Button" parent="VBoxContainer" unique_id=2145482586]
 layout_mode = 2
-theme_override_font_sizes/font_size = 32
+theme_override_font_sizes/font_size = 28
 text = "START MATCH"
 
-[node name="BtnBack" type="Button" parent="VBoxContainer"]
+[node name="BtnBack" type="Button" parent="VBoxContainer" unique_id=1813050528]
 layout_mode = 2
+theme_override_font_sizes/font_size = 14
 text = "BACK"
+
+[node name="ItemsModal" type="PanelContainer" parent="." unique_id=625376764]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -200.0
+offset_right = 220.0
+offset_bottom = 200.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="ItemsModal" unique_id=1134129417]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ModalTitle" type="Label" parent="ItemsModal/VBox" unique_id=1096993987]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "ITEMS & HAZARDS"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="ItemsModal/VBox" unique_id=714850048]
+layout_mode = 2
+
+[node name="Chk_Mine" type="CheckBox" parent="ItemsModal/VBox" unique_id=466836090]
+layout_mode = 2
+button_pressed = true
+text = "💣  Mines"
+
+[node name="Chk_Cyclone" type="CheckBox" parent="ItemsModal/VBox" unique_id=749177649]
+layout_mode = 2
+button_pressed = true
+text = "🌪️  Cyclones"
+
+[node name="Chk_Missile" type="CheckBox" parent="ItemsModal/VBox" unique_id=1478208607]
+layout_mode = 2
+button_pressed = true
+text = "🚀  Homing Missiles"
+
+[node name="Chk_PowerUp" type="CheckBox" parent="ItemsModal/VBox" unique_id=1574446113]
+layout_mode = 2
+button_pressed = true
+text = "⚡  Power-Ups"
+
+[node name="Chk_Coin" type="CheckBox" parent="ItemsModal/VBox" unique_id=1284550994]
+layout_mode = 2
+button_pressed = true
+text = "🪙  Coins"
+
+[node name="Chk_CrowdThrow" type="CheckBox" parent="ItemsModal/VBox" unique_id=2032956291]
+layout_mode = 2
+button_pressed = true
+text = "📦  Crowd Throws"
+
+[node name="HSeparator2" type="HSeparator" parent="ItemsModal/VBox" unique_id=1693574288]
+layout_mode = 2
+
+[node name="BtnClose" type="Button" parent="ItemsModal/VBox" unique_id=2033511542]
+layout_mode = 2
+text = "DONE"

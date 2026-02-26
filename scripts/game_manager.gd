@@ -19,9 +19,12 @@ enum MatchState { PRE_GAME, TIP_OFF, PLAYING, SCORED, THROW_IN, QUARTER_BREAK, G
 
 # --- State ---
 var match_state: MatchState = MatchState.PRE_GAME
+var is_debug: bool = false
 var current_quarter: int = 1
 var time_remaining: float = 0.0
 var scores: Array[int] = [0, 0]
+var free_points: Array[int] = [0, 0]
+var player_stats: Array[Array] = [[], []]
 var ball: RigidBody3D = null
 var teams: Array = [[], []]
 var team_data_store: Array = [null, null] # Store TeamData resources
@@ -29,6 +32,12 @@ var possession_team: int = -1
 var sides_flipped: bool = false
 var tip_off_winner: int = -1   # Team that won the initial tip-off
 var possession_arrow: int = -1 # Alternating possession: next inbound goes to this team
+
+# Coin combo tracking
+var _coin_combo_count: int = 0
+var _coin_combo_team: int = -1
+var _coin_combo_id: int = 0 # Incremented each pickup; used to detect stale resets
+const COIN_COMBO_WINDOW: float = 2.5
 
 # Court geometry
 var court_length: float = 30.0
@@ -41,16 +50,20 @@ var hoop_positions: Array[Vector3] = [
 	Vector3(0, 3.0, 14.0),
 ]
 
-# Tip-off positions (relative to center)
+# Tip-off positions (relative to center) — up to 5 per team
 var tip_off_positions_team0: Array[Vector3] = [
 	Vector3(0, 0, -2.0),   # Center player (jumper)
 	Vector3(-3, 0, -5.0),  # Left wing
 	Vector3(3, 0, -5.0),   # Right wing
+	Vector3(-5, 0, -8.0),  # Left corner (4v4+)
+	Vector3(5, 0, -8.0),   # Right corner (5v5)
 ]
 var tip_off_positions_team1: Array[Vector3] = [
 	Vector3(0, 0, 2.0),
 	Vector3(-3, 0, 5.0),
 	Vector3(3, 0, 5.0),
+	Vector3(-5, 0, 8.0),
+	Vector3(5, 0, 8.0),
 ]
 
 func _ready() -> void:
@@ -88,8 +101,12 @@ func setup_match(team0_data: Resource, team1_data: Resource, config: Dictionary 
 		quarter_duration = config["quarter_duration"]
 		time_remaining = quarter_duration
 	
+	if config.has("is_debug"):
+		is_debug = config["is_debug"]
+	
 	var items_enabled = config.get("items_enabled", true)
 	var human_team = config.get("human_team_index", 0)
+	var team_size = config.get("team_size", 3)
 	
 	# Clear existing players
 	get_tree().call_group("players", "queue_free")
@@ -98,38 +115,59 @@ func setup_match(team0_data: Resource, team1_data: Resource, config: Dictionary 
 	# Disable hazard spawner if items disabled
 	var hazard_spawner = get_node_or_null("HazardSpawner")
 	if hazard_spawner:
+		if "is_debug" in hazard_spawner:
+			hazard_spawner.is_debug = is_debug
 		hazard_spawner.process_mode = Node.PROCESS_MODE_INHERIT if items_enabled else Node.PROCESS_MODE_DISABLED
 		if not items_enabled:
 			# Also clear existing hazards
 			get_tree().call_group("hazards", "queue_free")
+		else:
+			# Apply per-item config if provided
+			var enabled_items = config.get("enabled_items", {})
+			if not enabled_items.is_empty() and "enabled_types" in hazard_spawner:
+				for item_type in enabled_items:
+					hazard_spawner.enabled_types[item_type] = enabled_items[item_type]
 	
 	teams = [[], []]
+	player_stats = [[], []]
+	free_points = [0, 0]
 	team_data_store = [team0_data, team1_data]
 	teams_updated.emit(team0_data, team1_data)
 	var PlayerScene = load("res://scenes/characters/player.tscn")
 	
 	# Spawn Team 0
-	_spawn_team(team0_data, 0, PlayerScene, human_team)
+	_spawn_team(team0_data, 0, PlayerScene, human_team, team_size)
 	# Spawn Team 1
-	_spawn_team(team1_data, 1, PlayerScene, human_team)
+	_spawn_team(team1_data, 1, PlayerScene, human_team, team_size)
+	
+	# Apply Court Theme
+	var theme_index = config.get("court_theme_index", 0)
+	_apply_court_theme(theme_index, team0_data)
 	
 	# Start match
 	start_match()
 
-func _spawn_team(team_data: Resource, team_idx: int, player_scene: PackedScene, human_team_idx: int) -> void:
+func _apply_court_theme(theme_index: int, home_team: Resource) -> void:
+	var court_builder = get_tree().get_first_node_in_group("court_builder")
+	if not court_builder or not court_builder.has_method("apply_theme"):
+		return
+	
+	var theme: CourtTheme = CourtThemes.get_preset(theme_index, home_team)
+	court_builder.apply_theme(theme)
+
+func _spawn_team(team_data: Resource, team_idx: int, player_scene: PackedScene, human_team_idx: int, team_size: int = 3) -> void:
 	var roster = team_data.roster
 	var tip_off_pos = tip_off_positions_team0 if team_idx == 0 else tip_off_positions_team1
+	var spawn_count = mini(roster.size(), team_size)
 	
-	for i in range(roster.size()):
-		var p_data = roster[i]
-		var player = player_scene.instantiate()
-	for i in range(roster.size()):
+	for i in range(spawn_count):
 		var p_data = roster[i]
 		var player = player_scene.instantiate()
 		player.name = "Player_%d_%d" % [team_idx, i]
 		
 		# Set properties BEFORE adding to tree
 		player.team_index = team_idx
+		player.roster_index = i
 		player.player_name = p_data.name
 		player.jersey_number = 10 + i 
 		
@@ -166,6 +204,20 @@ func _spawn_team(team_data: Resource, team_idx: int, player_scene: PackedScene, 
 			
 		teams[team_idx].append(player)
 		
+		# Append player stats
+		var stat_dict = {
+			"name": p_data.name,
+			"points": 0,
+			"2pt": 0,
+			"3pt": 0,
+			"rebounds": 0,
+			"assists": 0,
+			"steals": 0,
+			"coins": 0,
+			"powerups": 0
+		}
+		player_stats[team_idx].append(stat_dict)
+		
 		# Add jersey labels
 		_add_jersey_labels(player)
 
@@ -174,9 +226,26 @@ func _spawn_team(team_data: Resource, team_idx: int, player_scene: PackedScene, 
 
 func _find_teams() -> void:
 	teams = [[], []]
+	player_stats = [[], []]
 	for player in get_tree().get_nodes_in_group("players"):
 		if "team_index" in player:
-			teams[player.team_index].append(player)
+			var t = player.team_index
+			player.roster_index = teams[t].size()
+			teams[t].append(player)
+			
+			var p_name = player.get("player_name") if player.get("player_name") else "Player"
+			var stat_dict = {
+				"name": p_name,
+				"points": 0,
+				"2pt": 0,
+				"3pt": 0,
+				"rebounds": 0,
+				"assists": 0,
+				"steals": 0,
+				"coins": 0,
+				"powerups": 0
+			}
+			player_stats[t].append(stat_dict)
 	
 	# Assign jersey numbers (1-based per team)
 	for t in range(2):
@@ -222,6 +291,26 @@ func _process(delta: float) -> void:
 			if time_remaining <= 0:
 				_end_quarter()
 
+func record_stat(team_idx: int, roster_idx: int, stat_type: String, amount: int = 1) -> void:
+	if team_idx < 0 or team_idx >= player_stats.size(): return
+	var team_stats = player_stats[team_idx]
+	if roster_idx < 0 or roster_idx >= team_stats.size(): return
+	if stat_type in team_stats[roster_idx]:
+		team_stats[roster_idx][stat_type] += amount
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		# Toggle pause menu
+		if get_tree().paused:
+			# If there's already a pause menu, it handles its own input / resume
+			pass
+		else:
+			get_tree().paused = true
+			var PauseMenuScene = load("res://ui/pause_menu.tscn")
+			if PauseMenuScene:
+				var pause_menu = PauseMenuScene.instantiate()
+				add_child(pause_menu)
+
 # =========================================================
 #  MATCH START & TIP-OFF (Q1 only)
 # =========================================================
@@ -240,6 +329,9 @@ func start_match() -> void:
 
 func _do_tip_off() -> void:
 	match_state = MatchState.TIP_OFF
+	
+	_set_hazard_spawning(false)
+	get_tree().call_group("hazards", "queue_free")
 	
 	_strip_ball_from_all()
 	_freeze_all_players(true)
@@ -308,6 +400,8 @@ func _do_inbound_pass(inbound_team: int, endline_z: float) -> void:
 	## After a pause, the inbounder passes to the nearest teammate.
 	match_state = MatchState.INBOUND
 	_set_hazard_spawning(false)
+	get_tree().call_group("hazards", "queue_free")
+	
 	_strip_ball_from_all()
 	_freeze_all_players(true)
 	if ball:
@@ -348,6 +442,8 @@ func _do_inbound_pass(inbound_team: int, endline_z: float) -> void:
 	var recv_positions = [
 		Vector3(-3, 0.1, endline_z - sign(endline_z) * 3.0),
 		Vector3(3, 0.1, endline_z - sign(endline_z) * 3.0),
+		Vector3(-5, 0.1, endline_z - sign(endline_z) * 5.0),
+		Vector3(5, 0.1, endline_z - sign(endline_z) * 5.0),
 	]
 	for i in range(min(receivers.size(), recv_positions.size())):
 		receivers[i].global_position = recv_positions[i]
@@ -360,6 +456,8 @@ func _do_inbound_pass(inbound_team: int, endline_z: float) -> void:
 		Vector3(-2, 0.1, endline_z - sign(endline_z) * 6.0),
 		Vector3(0, 0.1, endline_z - sign(endline_z) * 8.0),
 		Vector3(2, 0.1, endline_z - sign(endline_z) * 6.0),
+		Vector3(-4, 0.1, endline_z - sign(endline_z) * 7.0),
+		Vector3(4, 0.1, endline_z - sign(endline_z) * 7.0),
 	]
 	for i in range(min(teams[other_team].size(), def_positions.size())):
 		teams[other_team][i].global_position = def_positions[i]
@@ -403,13 +501,11 @@ func _do_inbound_pass(inbound_team: int, endline_z: float) -> void:
 	if best_recv and inbounder.has_ball:
 		inbounder.pass_to_player(best_recv)
 	
-	# Move inbounder back onto the court after passing
-	await get_tree().create_timer(0.3).timeout
-	var return_pos = Vector3(inbound_x, 0.1, endline_z - sign(endline_z) * 2.0)
-	inbounder.global_position = return_pos
+	await get_tree().create_timer(1.5).timeout
 	
 	if ball:
 		ball._oob_disabled = false
+		ball._oob_cooldown = 2.0  # Grace period after re-enabling
 	match_state = MatchState.PLAYING
 	_set_hazard_spawning(true)
 
@@ -423,12 +519,50 @@ func award_score(scoring_team: int, points: int, stop_game: bool = true) -> void
 	scores[scoring_team] += points
 	score_changed.emit(scoring_team, scores[scoring_team])
 	
+	# Update stats if we have a shooter
+	if ball and ball.last_shooter != null and is_instance_valid(ball.last_shooter):
+		var shooter = ball.last_shooter
+		if "team_index" in shooter and "roster_index" in shooter:
+			record_stat(shooter.team_index, shooter.roster_index, "points", points)
+			if points == 3:
+				record_stat(shooter.team_index, shooter.roster_index, "3pt", 1)
+			elif points == 2:
+				record_stat(shooter.team_index, shooter.roster_index, "2pt", 1)
+			
+			# Check for assist
+			if ball.previous_holder != null and is_instance_valid(ball.previous_holder) and ball.previous_holder != shooter:
+				var passer = ball.previous_holder
+				if "team_index" in passer and "roster_index" in passer and passer.team_index == shooter.team_index:
+					record_stat(passer.team_index, passer.roster_index, "assists", 1)
+	
 	if not stop_game:
-		# Free points / Bonus logic
+		free_points[scoring_team] += points
+		
+		# Coin combo tracking
+		if scoring_team == _coin_combo_team:
+			_coin_combo_count += 1
+		else:
+			_coin_combo_count = 1
+			_coin_combo_team = scoring_team
+		_coin_combo_id += 1
+		var my_id = _coin_combo_id
+		
+		var team_name = "TEAM %d" % scoring_team
+		if team_data_store[scoring_team]:
+			team_name = team_data_store[scoring_team].name.to_upper()
+		var msg = "FREE POINTS - %s" % team_name
+		if _coin_combo_count > 1:
+			msg += " x %d" % _coin_combo_count
 		var hud = get_tree().get_first_node_in_group("hud")
 		if hud and hud.has_method("show_gaudy_message"):
-			hud.show_gaudy_message("FREE POINTS", 2.0)
+			hud.show_gaudy_message(msg, 2.0)
+		
+		# Auto-reset combo after window expires (only if no new coins picked up)
+		_start_combo_reset(my_id)
 		return
+	
+	if is_debug:
+		return # Do not stop the game or freeze players in debug mode
 	
 	match_state = MatchState.SCORED
 	
@@ -467,6 +601,17 @@ func award_score(scoring_team: int, points: int, stop_game: bool = true) -> void
 	var scored_on_hoop = get_target_hoop(scoring_team)
 	# The endline is at the hoop's z position
 	_do_inbound_pass(receiving_team, scored_on_hoop.z)
+
+# =========================================================
+#  COIN COMBO RESET
+# =========================================================
+
+func _start_combo_reset(combo_id: int) -> void:
+	await get_tree().create_timer(COIN_COMBO_WINDOW).timeout
+	# Only reset if no new coins have been picked up since this was started
+	if _coin_combo_id == combo_id:
+		_coin_combo_count = 0
+		_coin_combo_team = -1
 
 # =========================================================
 #  OUT-OF-BOUNDS / THROW-INS
@@ -692,7 +837,10 @@ func _strip_ball_from_all() -> void:
 
 func is_three_pointer(shoot_position: Vector3, target_hoop_index: int) -> bool:
 	var hoop_pos = hoop_positions[target_hoop_index]
-	var dist = shoot_position.distance_to(hoop_pos)
+	# Use XZ-plane distance only — hoop height (y=3.0) should not inflate the distance
+	var shoot_xz = Vector2(shoot_position.x, shoot_position.z)
+	var hoop_xz = Vector2(hoop_pos.x, hoop_pos.z)
+	var dist = shoot_xz.distance_to(hoop_xz)
 	return dist >= three_point_distance
 
 func get_target_hoop(team_index: int) -> Vector3:
