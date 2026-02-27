@@ -32,7 +32,36 @@ func _ready() -> void:
 	btn_next.pressed.connect(_on_next_pressed)
 	btn_select.pressed.connect(_on_select_pressed)
 	
-	# Grab focus
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.0, 0.6, 0.8, 0.9)
+	style.border_width_left = 3
+	style.border_width_top = 3
+	style.border_width_right = 3
+	style.border_width_bottom = 3
+	style.border_color = Color(0.0, 1.0, 1.0, 0.8)
+	style.corner_radius_top_left = 12
+	style.corner_radius_top_right = 12
+	style.corner_radius_bottom_right = 12
+	style.corner_radius_bottom_left = 12
+	style.content_margin_left = 30
+	style.content_margin_right = 30
+	style.content_margin_top = 15
+	style.content_margin_bottom = 15
+	
+	btn_select.add_theme_stylebox_override("normal", style)
+	
+	var h = style.duplicate()
+	h.bg_color = Color(0.0, 0.8, 1.0, 0.9)
+	btn_select.add_theme_stylebox_override("hover", h)
+	
+	var p = style.duplicate()
+	p.bg_color = Color(0.0, 0.5, 0.7, 0.9)
+	btn_select.add_theme_stylebox_override("pressed", p)
+	
+	btn_select.add_theme_color_override("font_color", Color.WHITE)
+	btn_select.add_theme_font_size_override("font_size", 28)
+	btn_select.text = "ADVANCE TO SEASON"
+	
 	btn_select.grab_focus()
 
 func _input(event: InputEvent) -> void:

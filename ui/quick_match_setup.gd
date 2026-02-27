@@ -62,8 +62,6 @@ func _ready() -> void:
 	for div in LeagueManager.divisions:
 		available_teams.append_array(div["teams"])
 	
-	_generate_all_logos()
-	
 	# Quarter Options
 	opt_quarters.add_item("15 Seconds", 15)
 	opt_quarters.add_item("30 Seconds", 30)
@@ -201,14 +199,27 @@ func _update_team_panel_borders() -> void:
 
 func _draw_team_border(vbox: Control) -> void:
 	var rect = Rect2(Vector2.ZERO, vbox.size)
+	
+	# Determine team color to use
+	var color = Color(0.2, 0.2, 0.35, 0.25)
+	if vbox == team_a_container and available_teams.size() > team_a_index:
+		color = available_teams[team_a_index].color_primary
+	elif vbox == team_b_container and available_teams.size() > team_b_index:
+		color = available_teams[team_b_index].color_primary
+	
 	if vbox.has_focus():
-		# Bright neon cyan border
-		vbox.draw_rect(rect, Color(0.0, 1.0, 1.0, 0.7), false, 2.5)
-		# Subtle inner glow
+		# Bright neon border
+		vbox.draw_rect(rect, color, false, 2.5)
+		# Colored inner glow
 		var inner = Rect2(rect.position + Vector2(3, 3), rect.size - Vector2(6, 6))
-		vbox.draw_rect(inner, Color(0.0, 1.0, 1.0, 0.15), false, 1.0)
+		var fill = color
+		fill.a = 0.5
+		vbox.draw_rect(inner, fill, true)
 	else:
-		vbox.draw_rect(rect, Color(0.2, 0.2, 0.35, 0.25), false, 1.0)
+		var fill = color
+		fill.a = 0.2
+		vbox.draw_rect(rect, fill, true)
+		vbox.draw_rect(rect, color.darkened(0.5), false, 1.0)
 
 # =====================================================================
 #  LOGO GENERATION

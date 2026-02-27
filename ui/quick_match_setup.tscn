@@ -68,7 +68,7 @@ text = "▲"
 flat = true
 
 [node name="LogoRect" type="TextureRect" parent="VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=1185547767]
-custom_minimum_size = Vector2(80, 80)
+custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 stretch_mode = 5
 
@@ -110,7 +110,7 @@ text = "▲"
 flat = true
 
 [node name="LogoRect" type="TextureRect" parent="VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=1187915855]
-custom_minimum_size = Vector2(80, 80)
+custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 stretch_mode = 5
 

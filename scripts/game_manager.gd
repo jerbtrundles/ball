@@ -101,8 +101,7 @@ func setup_match(team0_data: Resource, team1_data: Resource, config: Dictionary 
 		quarter_duration = config["quarter_duration"]
 		time_remaining = quarter_duration
 	
-	if config.has("is_debug"):
-		is_debug = config["is_debug"]
+	is_debug = config.get("is_debug", false)
 	
 	var items_enabled = config.get("items_enabled", true)
 	var human_team = config.get("human_team_index", 0)
@@ -170,6 +169,8 @@ func _spawn_team(team_data: Resource, team_idx: int, player_scene: PackedScene, 
 		player.roster_index = i
 		player.player_name = p_data.name
 		player.jersey_number = 10 + i 
+		if "logo" in team_data:
+			player.team_logo = team_data.logo
 		
 		# Human Control
 		if team_idx == human_team_idx and i == 0:
@@ -260,27 +261,34 @@ func _find_teams() -> void:
 func _add_jersey_labels(player_node: CharacterBody3D) -> void:
 	# Remove existing jersey labels (if already there)
 	for child in player_node.get_children():
-		if child.name.begins_with("JerseyNum_"):
+		if child.name.begins_with("JerseyNum_") or child.name == "JerseyLogo":
 			child.queue_free()
 	
 	var num = player_node.jersey_number if "jersey_number" in player_node else 0
-	if num <= 0:
-		return
 	
-	for z_side in [-1, 1]:
+	if num > 0:
 		var label = Label3D.new()
-		label.name = "JerseyNum_Front" if z_side == -1 else "JerseyNum_Back"
+		label.name = "JerseyNum_Front"
 		label.text = str(num)
 		label.font_size = 96
 		label.pixel_size = 0.004
-		label.position = Vector3(0, 0.85, z_side * 0.36)
-		label.rotation.y = PI if z_side == -1 else 0
+		label.position = Vector3(0, 0.85, -0.37)
+		label.rotation.y = PI
 		label.modulate = Color.WHITE
 		label.outline_modulate = Color.BLACK
 		label.outline_size = 12
 		label.no_depth_test = false
 		label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 		player_node.add_child(label)
+		
+	if "team_logo" in player_node and player_node.team_logo != null:
+		var decal = Decal.new()
+		decal.name = "JerseyLogo"
+		decal.texture_albedo = player_node.team_logo
+		decal.size = Vector3(0.5, 0.4, 0.5) # Projection width, depth, height
+		decal.position = Vector3(0, 0.85, 0.2) # Back side of the chest
+		decal.rotation.x = PI / 2.0 # Project local -Y toward global -Z (inwards)
+		player_node.add_child(decal)
 
 func _process(delta: float) -> void:
 	_apply_screen_shake(delta)
@@ -555,28 +563,6 @@ func award_score(scoring_team: int, points: int, stop_game: bool = true) -> void
 	
 	if not stop_game:
 		free_points[scoring_team] += points
-		
-		# Coin combo tracking
-		if scoring_team == _coin_combo_team:
-			_coin_combo_count += 1
-		else:
-			_coin_combo_count = 1
-			_coin_combo_team = scoring_team
-		_coin_combo_id += 1
-		var my_id = _coin_combo_id
-		
-		var team_name = "TEAM %d" % scoring_team
-		if team_data_store[scoring_team]:
-			team_name = team_data_store[scoring_team].name.to_upper()
-		var msg = "FREE POINTS - %s" % team_name
-		if _coin_combo_count > 1:
-			msg += " x %d" % _coin_combo_count
-		var hud = get_tree().get_first_node_in_group("hud")
-		if hud and hud.has_method("show_gaudy_message"):
-			hud.show_gaudy_message(msg, 2.0)
-		
-		# Auto-reset combo after window expires (only if no new coins picked up)
-		_start_combo_reset(my_id)
 		return
 	
 	if is_debug:
@@ -623,6 +609,29 @@ func award_score(scoring_team: int, points: int, stop_game: bool = true) -> void
 # =========================================================
 #  COIN COMBO RESET
 # =========================================================
+
+func record_coin_pickup_combo(team_index: int) -> void:
+	if team_index == _coin_combo_team:
+		_coin_combo_count += 1
+	else:
+		_coin_combo_count = 1
+		_coin_combo_team = team_index
+	_coin_combo_id += 1
+	var my_id = _coin_combo_id
+	
+	var team_name = "TEAM %d" % team_index
+	if team_data_store[team_index]:
+		team_name = team_data_store[team_index].name.to_upper()
+	var msg = "FREE POINTS - %s" % team_name
+	if _coin_combo_count > 1:
+		msg += " x %d" % _coin_combo_count
+	var hud = get_tree().get_first_node_in_group("hud")
+	if hud and hud.has_method("show_gaudy_message"):
+		var hud_color = Color.GOLD if team_index == 0 else Color(1.0, 0.8, 0.0)
+		hud.show_gaudy_message(msg, 2.0, "gold") # the hud uses strings for gaudy sometimes, or we can just pass msg
+	
+	# Auto-reset combo after window expires (only if no new coins picked up)
+	_start_combo_reset(my_id)
 
 func _start_combo_reset(combo_id: int) -> void:
 	await get_tree().create_timer(COIN_COMBO_WINDOW).timeout
@@ -932,6 +941,8 @@ func get_formatted_time() -> String:
 	var mins = int(time_remaining) / 60
 	var secs = int(time_remaining) % 60
 	return "%d:%02d" % [mins, secs]
+
+
 
 # =========================================================
 #  HAZARD SPAWNER

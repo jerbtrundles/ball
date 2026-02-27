@@ -86,6 +86,7 @@ func _ready() -> void:
 		shot_power = 14.0
 
 @export var jersey_number: int = 0  # Set by game_manager during team setup
+var team_logo: Texture2D = null
 
 # Arm pivot references (for animation)
 var _left_arm_pivot: Node3D = null
@@ -179,23 +180,7 @@ func _setup_visuals() -> void:
 		hand.material_override = skin_mat
 		hand.position = Vector3(0, -0.68, 0)
 		arm_pivot.add_child(hand)
-	
-	# --- Jersey number (front and back) ---
-	if jersey_number > 0:
-		for z_side in [-1, 1]:  # front (-1) and back (+1)
-			var label = Label3D.new()
-			label.name = "JerseyNum_Front" if z_side == -1 else "JerseyNum_Back"
-			label.text = str(jersey_number)
-			label.font_size = 96
-			label.pixel_size = 0.004
-			label.position = Vector3(0, 0.85, z_side * 0.36)
-			label.rotation.y = PI if z_side == -1 else 0
-			label.modulate = Color.WHITE
-			label.outline_modulate = Color.BLACK
-			label.outline_size = 12
-			label.no_depth_test = false
-			label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-			add_child(label)
+
 	
 	# --- Human player ring indicator ---
 	if is_human:
@@ -455,7 +440,9 @@ func do_shoot() -> void:
 		# === MADE SHOT — Perfect tween arc, bypasses physics ===
 		# Target slightly ABOVE the rim so ball drops down through it
 		var above_rim = rim_center + Vector3(0, 0.5, 0)
-		_animate_perfect_shot(ball_ref, ball_ref.global_position, above_rim, dist)
+		# Determine which hoop team index this basket belongs to (0 = north/negative-Z, 1 = south/positive-Z)
+		var hoop_team = 0 if target_hoop.z < 0 else 1
+		_animate_perfect_shot(ball_ref, ball_ref.global_position, above_rim, dist, hoop_team)
 	else:
 		# === MISS — Physics-based launch toward rim with offset ===
 		var miss_offset = Vector3(randf_range(-1.5, 1.5), randf_range(-0.3, 0.5), randf_range(-1.0, 1.0))
@@ -467,19 +454,22 @@ func do_shoot() -> void:
 	current_state = State.IDLE
 	input_shoot = false
 
-func _animate_perfect_shot(ball_ref: RigidBody3D, from: Vector3, to: Vector3, dist: float) -> void:
+func _animate_perfect_shot(ball_ref: RigidBody3D, from: Vector3, to: Vector3, dist: float, hoop_team: int = 0) -> void:
 	## Animate the ball along a perfect parabolic arc using a tween.
 	## The ball bypasses physics entirely, guaranteeing a clean swish.
+	## hoop_team: the basket's team index (0 = north hoop, 1 = south hoop).
+	## Scoring is triggered directly here — NOT via the Area3D body_entered signal —
+	## because the ball's collision is disabled during flight and re-enabled while the
+	## ball is already inside the trigger zone, so body_entered would never fire.
 	
-	# Mark as shot
+	# Mark as shot — must be true so award_score guard passes
 	ball_ref._was_shot = true
 	ball_ref.last_shooter_team = team_index
+	ball_ref.last_shooter = self
 	ball_ref._shot_origin = global_position  # Record where shot was taken for 3pt detection
 	
 	# Disable physics AND collision on the ball during flight
 	ball_ref.freeze = true
-	var saved_layer = ball_ref.collision_layer
-	var saved_mask = ball_ref.collision_mask
 	ball_ref.collision_layer = 0
 	ball_ref.collision_mask = 0
 	
@@ -501,13 +491,16 @@ func _animate_perfect_shot(ball_ref: RigidBody3D, from: Vector3, to: Vector3, di
 		0.0, 1.0, flight_time
 	)
 	
-	# When tween finishes, re-enable physics and collision, let ball drop through the net
+	# When tween finishes: re-enable physics, drop the ball through the net,
+	# and directly trigger scoring (bypassing the unreliable Area3D signal).
 	tween.finished.connect(func():
 		ball_ref.freeze = false
-		ball_ref.collision_layer = saved_layer
-		ball_ref.collision_mask = saved_mask
+		ball_ref.collision_layer = 4
+		ball_ref.collision_mask = 1
 		ball_ref.linear_velocity = Vector3(0, -2.0, 0)  # Gentle drop through net
 		ball_ref.angular_velocity = Vector3.ZERO
+		# Directly award the score — _was_shot is still true at this point
+		ball_ref._on_hoop_entered(hoop_team)
 	)
 
 func _calculate_shot_percentage(hoop_pos: Vector3) -> float:
@@ -585,6 +578,13 @@ func do_pass() -> void:
 	pass_dir.y = 0.1  # Slight upward angle
 	pass_dir = pass_dir.normalized()
 	
+	var flat_dir = Vector3(pass_dir.x, 0, pass_dir.z).normalized()
+	facing_direction = flat_dir
+	aim_direction = flat_dir
+	if held_ball:
+		var ball_offset = flat_dir * 1.0 + Vector3(0, 0.8, 0)
+		held_ball.global_position = global_position + ball_offset
+	
 	_release_ball()
 	held_ball = null
 	
@@ -608,6 +608,13 @@ func pass_to_player(target: CharacterBody3D) -> void:
 	# More upward angle for longer passes
 	pass_dir.y = clampf(pass_dist * 0.03, 0.1, 0.35)
 	pass_dir = pass_dir.normalized()
+	
+	var flat_dir = Vector3(pass_dir.x, 0, pass_dir.z).normalized()
+	facing_direction = flat_dir
+	aim_direction = flat_dir
+	if held_ball:
+		var ball_offset = flat_dir * 1.0 + Vector3(0, 0.8, 0)
+		held_ball.global_position = global_position + ball_offset
 	
 	_release_ball()
 	held_ball = null
@@ -855,26 +862,24 @@ func _process_knockdown(delta: float) -> void:
 func pickup_ball(ball_body: RigidBody3D) -> void:
 	if has_ball: return
 	if knockdown_timer > 0: return # Can't pick up while down
-	
+
 	# Lock logic...
 	ball_body.set_holder(self)
-	
+
 	held_ball = ball_body
 	has_ball = true
 	ball_body.freeze = true
-	ball_body.collision_layer = 0
-	ball_body.collision_mask = 0
-	
+	ball_body.linear_velocity = Vector3.ZERO
+	ball_body.angular_velocity = Vector3.ZERO
+	# Removed collision layer/mask zeroing because it breaks releasing/passing
+
 	got_ball.emit()
 
 func add_pending_points(amount: int) -> void:
 	pending_free_points += amount
-	var hud = get_tree().get_first_node_in_group("hud")
-	if hud and hud.has_method("show_message"):
-		# Show small floating text or just HUD update?
-		# For now, maybe just a console log or small indicator?
-		# Let's trust the HUD to pull this value if it wants, or just show a small poop-up
-		pass
+	var game_mgr = _get_game_manager()
+	if game_mgr and game_mgr.has_method("record_coin_pickup_combo"):
+		game_mgr.record_coin_pickup_combo(team_index)
 	print("[%s] Collected coin! Pending: %d" % [name, pending_free_points])
 
 func scatter_pending_points() -> void:

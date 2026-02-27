@@ -133,6 +133,7 @@ func _build_trigger() -> void:
 	col.position.y = _base_y
 	area.add_child(col)
 	area.body_entered.connect(_on_body_entered)
+	area.area_entered.connect(_on_area_entered)
 	add_child(area)
 
 func _process(delta: float) -> void:
@@ -160,6 +161,13 @@ func _process(delta: float) -> void:
 			queue_free()
 
 func _on_body_entered(body: Node3D) -> void:
+	_process_pickup(body)
+
+func _on_area_entered(area: Area3D) -> void:
+	if area.owner and area.owner.is_in_group("players"):
+		_process_pickup(area.owner)
+
+func _process_pickup(body: Node3D) -> void:
 	if _collected:
 		return
 	if body.is_in_group("players") and body.has_method("apply_buff"):

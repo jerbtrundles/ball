@@ -52,62 +52,87 @@ func generate_default_league():
 			
 			var team = TeamDataScript.new(t_name, color)
 			
-			# Generate Logo
-			var img = Image.create(64, 64, false, Image.FORMAT_RGBA8)
-			img.fill(color)
-			# Draw a simple border
-			var border_col = Color.WHITE
-			for x in range(64):
-				for y in range(64):
-					if x < 4 or x > 59 or y < 4 or y > 59:
-						img.set_pixel(x, y, border_col)
+			# Generate or Load Logo
+			var logo_path = "res://assets/images/logos/logo_%s.png" % t_name.to_lower()
+			if ResourceLoader.exists(logo_path):
+				var tex = load(logo_path)
+				if tex is Texture2D:
+					var img = tex.get_image()
+					if img:
+						if img.is_compressed():
+							img.decompress()
+						if img.get_format() != Image.FORMAT_RGBA8:
+							img.convert(Image.FORMAT_RGBA8)
 						
-			# Draw the team's initial letter (crude pixel art)
-			var center_col = Color.WHITE
-			var initial = t_name.substr(0, 1).to_upper()
-			
-			# Define some crude 5x5 pixel letters scaled up (each 'pixel' is 4x4 image pixels)
-			# Top-left is at (22, 22)
-			var start_x = 22
-			var start_y = 22
-			var pixel_size = 4
-			
-			var pattern = []
-			if initial == "V":
-				pattern = [
-					1,0,0,0,1,
-					1,0,0,0,1,
-					0,1,0,1,0,
-					0,1,0,1,0,
-					0,0,1,0,0
-				]
-			elif initial == "C":
-				pattern = [
-					0,1,1,1,0,
-					1,0,0,0,1,
-					1,0,0,0,0,
-					1,0,0,0,1,
-					0,1,1,1,0
-				]
+						for x in range(img.get_width()):
+							for y in range(img.get_height()):
+								var c = img.get_pixel(x, y)
+								# Remove pure magenta (or very close to it)
+								if c.r > 0.95 and c.g < 0.05 and c.b > 0.95:
+									c.a = 0.0
+									img.set_pixel(x, y, c)
+						
+						team.logo = ImageTexture.create_from_image(img)
+					else:
+						team.logo = tex
+				else:
+					team.logo = tex
 			else:
-				# Generic box for unknown initials
-				pattern = [
-					1,1,1,1,1,
-					1,0,0,0,1,
-					1,0,1,0,1,
-					1,0,0,0,1,
-					1,1,1,1,1
-				]
-			
-			for py in range(5):
-				for px in range(5):
-					if pattern[py * 5 + px] == 1:
-						for ix in range(pixel_size):
-							for iy in range(pixel_size):
-								img.set_pixel(start_x + px * pixel_size + ix, start_y + py * pixel_size + iy, center_col)
-					
-			var tex = ImageTexture.create_from_image(img)
-			team.logo = tex
+				var img = Image.create(64, 64, false, Image.FORMAT_RGBA8)
+				img.fill(color)
+				# Draw a simple border
+				var border_col = Color.WHITE
+				for x in range(64):
+					for y in range(64):
+						if x < 4 or x > 59 or y < 4 or y > 59:
+							img.set_pixel(x, y, border_col)
+							
+				# Draw the team's initial letter (crude pixel art)
+				var center_col = Color.WHITE
+				var initial = t_name.substr(0, 1).to_upper()
+				
+				# Define some crude 5x5 pixel letters scaled up (each 'pixel' is 4x4 image pixels)
+				# Top-left is at (22, 22)
+				var start_x = 22
+				var start_y = 22
+				var pixel_size = 4
+				
+				var pattern = []
+				if initial == "V":
+					pattern = [
+						1,0,0,0,1,
+						1,0,0,0,1,
+						0,1,0,1,0,
+						0,1,0,1,0,
+						0,0,1,0,0
+					]
+				elif initial == "C":
+					pattern = [
+						0,1,1,1,0,
+						1,0,0,0,1,
+						1,0,0,0,0,
+						1,0,0,0,1,
+						0,1,1,1,0
+					]
+				else:
+					# Generic box for unknown initials
+					pattern = [
+						1,1,1,1,1,
+						1,0,0,0,1,
+						1,0,1,0,1,
+						1,0,0,0,1,
+						1,1,1,1,1
+					]
+				
+				for py in range(5):
+					for px in range(5):
+						if pattern[py * 5 + px] == 1:
+							for ix in range(pixel_size):
+								for iy in range(pixel_size):
+									img.set_pixel(start_x + px * pixel_size + ix, start_y + py * pixel_size + iy, center_col)
+						
+				var tex = ImageTexture.create_from_image(img)
+				team.logo = tex
 			
 			# Generate Roster (5 players)
 			for k in range(5):

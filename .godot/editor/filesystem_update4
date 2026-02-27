@@ -1,3 +1,13 @@
-res://ui/main_menu.gd
+res://resources/court_themes/court_theme.gd
+res://scenes/characters/player.gd
+res://scenes/court/court_builder.gd
+res://scenes/items/coin.gd
+res://scripts/game_manager.gd
+res://scripts/player_controller.gd
+res://scripts/managers/court_themes.gd
 res://scripts/managers/league_manager.gd
+res://ui/main_menu.gd
+res://ui/quick_match_setup.gd
+res://ui/season_hub.gd
 res://ui/team_selection.gd
+res://scenes/items/power_up.gd
