@@ -14,3 +14,5 @@ class_name CourtTheme
 @export var glow_enabled: bool = true
 @export var swatch_color: Color = Color(0.0, 0.9, 1.0)
 @export var animated_floor: bool = false  # Enables ShaderMaterial sweep animation
+@export var hazard_scenes: Array[PackedScene] = []
+@export var hazard_count: int = 0

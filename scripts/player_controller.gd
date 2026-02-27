@@ -37,4 +37,8 @@ func _process(_delta: float) -> void:
 			player.input_shoot = true
 		else:
 			player.input_tackle = true
+			player.input_tackle = true
 			player.input_jump = true
+	
+	if Input.is_key_pressed(KEY_L):
+		player.input_kiss = true

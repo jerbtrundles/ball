@@ -534,6 +534,24 @@ func award_score(scoring_team: int, points: int, stop_game: bool = true) -> void
 				var passer = ball.previous_holder
 				if "team_index" in passer and "roster_index" in passer and passer.team_index == shooter.team_index:
 					record_stat(passer.team_index, passer.roster_index, "assists", 1)
+		
+		# Bank pending points!
+		if "pending_free_points" in shooter and shooter.pending_free_points > 0:
+			var banked = shooter.pending_free_points
+			scores[scoring_team] += banked
+			record_stat(shooter.team_index, shooter.roster_index, "coins", banked) # Pending points count as coins collected effectively? Or just bonus?
+			shooter.pending_free_points = 0
+			
+			# Notify
+			var hud = get_tree().get_first_node_in_group("hud")
+			if hud and hud.has_method("show_gaudy_message"):
+				var team_name = "BLUE" if scoring_team == 0 else "RED"
+				if team_data_store[scoring_team]:
+					team_name = team_data_store[scoring_team].name
+				hud.show_gaudy_message("BANKED %d FREE POINTS!" % banked, 3.0)
+				
+				# Re-emit score update with new total
+				score_changed.emit(scoring_team, scores[scoring_team])
 	
 	if not stop_game:
 		free_points[scoring_team] += points

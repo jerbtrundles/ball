@@ -223,8 +223,8 @@ flat = true
 [node name="CourtCardsContainer" type="HBoxContainer" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812348]
 custom_minimum_size = Vector2(220, 52)
 layout_mode = 2
-alignment = 1
 theme_override_constants/separation = 5
+alignment = 1
 
 [node name="BtnCourtNext" type="Button" parent="VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812349]
 layout_mode = 2

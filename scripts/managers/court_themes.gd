@@ -11,8 +11,10 @@ const ID_INFERNO    = 2
 const ID_GLACIAL    = 3
 const ID_VOID       = 4
 const ID_GOLD_RUSH  = 5
+const ID_CYBER_GRID = 6
+const ID_DESERT     = 7
 
-const PRESET_COUNT = 7
+const PRESET_COUNT = 8
 
 # Human-readable names in same order as ID_* constants
 const PRESET_NAMES: Array = [
@@ -22,12 +24,13 @@ const PRESET_NAMES: Array = [
 	"Glacial",
 	"Void",
 	"Gold Rush",
-	"Cyber Grid"
+	"Cyber Grid",
+	"Desert"
 ]
 
 # Emoji/icon per preset (used in UI cards)
 const PRESET_ICONS: Array = [
-	"⚡", "🏠", "🔥", "❄️", "🌑", "✨", "🟣"
+	"⚡", "🏠", "🔥", "❄️", "🌑", "✨", "🟣", "🌵"
 ]
 
 # =============================================================
@@ -50,6 +53,8 @@ func get_preset(index: int, team_data: Resource = null) -> CourtTheme:
 			return _make_gold_rush()
 		6:  # Cyber Grid
 			return _make_cyber_grid()
+		ID_DESERT:
+			return _make_desert()
 		_:  # ID_DEFAULT and fallback
 			return _make_default()
 
@@ -168,4 +173,26 @@ func _make_cyber_grid() -> CourtTheme:
 	t.glow_enabled       = true
 	t.swatch_color       = Color(0.55, 0.0, 1.0)
 	t.animated_floor     = true
+	return t
+
+func _make_desert() -> CourtTheme:
+	var t = CourtTheme.new()
+	t.theme_name         = "Desert"
+	t.floor_color        = Color(0.76, 0.6, 0.42) # Sand
+	t.wall_color         = Color(0.6, 0.4, 0.2, 0.0)
+	t.line_color         = Color(1.0, 1.0, 1.0)
+	t.hoop_color         = Color(0.4, 0.2, 0.1) # Wood/Rust
+	t.ambient_color      = Color(0.2, 0.15, 0.1)
+	t.main_light_color   = Color(1.0, 0.95, 0.8) # Sun
+	t.spotlight_color    = Color(1.0, 0.9, 0.6)
+	t.floor_accent_color = Color(0.5, 0.3, 0.1)
+	t.glow_enabled       = false
+	t.swatch_color       = Color(0.76, 0.6, 0.42)
+	
+	# Hazards (using load directly as we can't easily reference PackedScene here otherwise)
+	if "hazard_scenes" in t:
+		t.hazard_scenes.append(load("res://scenes/hazards/cactus.tscn"))
+		t.hazard_scenes.append(load("res://scenes/hazards/dune.tscn"))
+		t.hazard_count = 5
+	
 	return t

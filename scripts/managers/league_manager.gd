@@ -61,12 +61,50 @@ func generate_default_league():
 				for y in range(64):
 					if x < 4 or x > 59 or y < 4 or y > 59:
 						img.set_pixel(x, y, border_col)
-			# Draw a letter (very crude, just a box for now or maybe we can use a Label in a Viewport later)
-			# For now, just a distinct color shape in center
-			var center_col = Color.from_hsv((hue + 0.5) - floor(hue + 0.5), 1.0, 1.0)
-			for x in range(20, 44):
-				for y in range(20, 44):
-					img.set_pixel(x, y, center_col)
+						
+			# Draw the team's initial letter (crude pixel art)
+			var center_col = Color.WHITE
+			var initial = t_name.substr(0, 1).to_upper()
+			
+			# Define some crude 5x5 pixel letters scaled up (each 'pixel' is 4x4 image pixels)
+			# Top-left is at (22, 22)
+			var start_x = 22
+			var start_y = 22
+			var pixel_size = 4
+			
+			var pattern = []
+			if initial == "V":
+				pattern = [
+					1,0,0,0,1,
+					1,0,0,0,1,
+					0,1,0,1,0,
+					0,1,0,1,0,
+					0,0,1,0,0
+				]
+			elif initial == "C":
+				pattern = [
+					0,1,1,1,0,
+					1,0,0,0,1,
+					1,0,0,0,0,
+					1,0,0,0,1,
+					0,1,1,1,0
+				]
+			else:
+				# Generic box for unknown initials
+				pattern = [
+					1,1,1,1,1,
+					1,0,0,0,1,
+					1,0,1,0,1,
+					1,0,0,0,1,
+					1,1,1,1,1
+				]
+			
+			for py in range(5):
+				for px in range(5):
+					if pattern[py * 5 + px] == 1:
+						for ix in range(pixel_size):
+							for iy in range(pixel_size):
+								img.set_pixel(start_x + px * pixel_size + ix, start_y + py * pixel_size + iy, center_col)
 					
 			var tex = ImageTexture.create_from_image(img)
 			team.logo = tex

@@ -70,9 +70,10 @@ func _on_body_entered(body: Node3D) -> void:
 		if "team_index" in body and "roster_index" in body:
 			var game_mgr = get_tree().get_first_node_in_group("game_manager")
 			if game_mgr and game_mgr.has_method("award_score"):
-				game_mgr.award_score(body.team_index, 1, false)
-			if game_mgr and game_mgr.has_method("record_stat"):
-				game_mgr.record_stat(body.team_index, body.roster_index, "coins", 1)
+			# game_mgr.award_score(body.team_index, 1, false)
+			# game_mgr.record_stat(body.team_index, body.roster_index, "coins", 1)
+			if body.has_method("add_pending_points"):
+				body.add_pending_points(1)
 		
 		_collected = true
 		# VFX

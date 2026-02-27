@@ -45,6 +45,43 @@ func apply_theme(theme: CourtTheme) -> void:
 		
 	# Apply lighting changes immediately
 	_apply_theme_lighting()
+	
+	# Spawn hazards
+	_spawn_theme_hazards(theme)
+
+func _spawn_theme_hazards(theme: CourtTheme) -> void:
+	# Clear existing theme hazards
+	for child in get_children():
+		if child.is_in_group("theme_hazards"):
+			child.queue_free()
+	
+	if not theme: return
+	if not "hazard_scenes" in theme or theme.hazard_scenes.is_empty(): return
+	if not "hazard_count" in theme or theme.hazard_count <= 0: return
+	
+	for i in range(theme.hazard_count):
+		var scene = theme.hazard_scenes.pick_random()
+		if scene:
+			var inst = scene.instantiate()
+			inst.add_to_group("theme_hazards")
+			add_child(inst)
+			
+			# Random position on court (avoiding center and hoops)
+			# Court is roughly -8 to 8 X, -15 to 15 Z
+			# Avoid center circle (radius 2.5) and keys (Z > 10 or Z < -10)
+			
+			var params = PhysicsShapeQueryParameters3D.new()
+			# Simple retry loop for placement
+			for attempt in range(10):
+				var rx = randf_range(-court_width/2 + 1.0, court_width/2 - 1.0)
+				var rz = randf_range(-court_length/2 + 2.0, court_length/2 - 2.0)
+				
+				# Check avoidance
+				if Vector2(rx, rz).length() < 3.0: continue # Center
+				if abs(rz) > court_length/2 - 6.0 and abs(rx) < 3.0: continue # Key area
+				
+				inst.position = Vector3(rx, 0, rz)
+				break
 
 func _ready() -> void:
 	add_to_group("court_builder")

@@ -25,8 +25,8 @@ func _on_quick_match_pressed() -> void:
 func _on_new_season_pressed() -> void:
 	print("Starting New Season...")
 	LeagueManager.generate_default_league()
-	# Transition to Season Hub
-	get_tree().change_scene_to_file("res://ui/season_hub.tscn")
+	# Transition to Team Selection
+	get_tree().change_scene_to_file("res://ui/team_selection.tscn")
 
 func _on_quit_pressed() -> void:
 	get_tree().quit()

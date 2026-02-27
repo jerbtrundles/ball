@@ -1,4 +1,3 @@
-res://resources/court_themes/court_theme.gd
-res://scenes/court/court_builder.gd
-res://scripts/managers/court_themes.gd
-res://ui/quick_match_setup.gd
+res://ui/main_menu.gd
+res://scripts/managers/league_manager.gd
+res://ui/team_selection.gd

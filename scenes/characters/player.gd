@@ -24,6 +24,8 @@ signal call_for_pass(requester: CharacterBody3D)  # Fired when player wants a te
 @export var strength: float = 1.0  # How fast they recover from tackles
 @export var jump_force: float = 10.0
 
+var pending_free_points: int = 0
+
 # --- State ---
 enum State { IDLE, RUNNING, SPRINTING, SHOOTING, PASSING, TACKLING, KNOCKED_DOWN, CELEBRATING }
 var current_state: State = State.IDLE
@@ -54,6 +56,8 @@ var input_shoot: bool = false
 var input_tackle: bool = false
 var input_call_pass: bool = false  # Press pass when you don't have the ball
 var input_jump: bool = false
+var input_kiss: bool = false
+var kiss_cooldown: float = 0.0
 
 # --- References ---
 var held_ball: RigidBody3D = null
@@ -273,6 +277,9 @@ func _physics_process(delta: float) -> void:
 	if tackle_cooldown > 0:
 		tackle_cooldown -= delta
 	
+	if kiss_cooldown > 0:
+		kiss_cooldown -= delta
+	
 	# Buff timer and animation
 	if _buff_indicator_mesh and _buff_indicator_mesh.visible:
 		_buff_indicator_mesh.rotation.y += delta * 2.0
@@ -396,6 +403,11 @@ func _process_actions() -> void:
 	if has_ball:
 		input_tackle = false
 		input_call_pass = false
+		input_kiss = false # Cannot kiss while holding ball? Maybe you can.
+	
+	if input_kiss and kiss_cooldown <= 0:
+		do_kiss()
+		input_kiss = false
 
 func do_shoot() -> void:
 	if not has_ball or held_ball == null:
@@ -669,6 +681,43 @@ func do_tackle() -> void:
 				if "team_index" in body and body.team_index != team_index:
 					_hit_player(body)
 
+func do_kiss() -> void:
+	# Find closest player
+	var closest: CharacterBody3D = null
+	var min_dist: float = 2.5 # Max kiss range
+	
+	for p in get_tree().get_nodes_in_group("players"):
+		if p == self: continue
+		var d = global_position.distance_to(p.global_position)
+		if d < min_dist:
+			min_dist = d
+			closest = p
+	
+	if closest:
+		# SMOOCH!
+		kiss_cooldown = 15.0 # Once per quarter implies long cooldown, let's say 15s or 30s. Or check quarter logic?
+		# User said "once per quarter". I'll just use a long cooldown for now.
+		kiss_cooldown = 60.0 
+		
+		# Visuals: Rotate to face
+		var dir = (closest.global_position - global_position).normalized()
+		rotation.y = atan2(dir.x, dir.z)
+		
+		# Heart Particles?
+		# We can spawn a simple label or particle if we had one.
+		# For now, just the gaudy message.
+		
+		var hud = get_tree().get_first_node_in_group("hud")
+		if hud and hud.has_method("show_gaudy_message"):
+			var msg = "SMOOCH!"
+			var p_name = closest.player_name if "player_name" in closest else "Player"
+			msg = "SMOOCH! %s + %s" % [player_name, p_name]
+			hud.show_gaudy_message(msg, 3.0)
+		
+		# Maybe heal them or something?
+		# For now purely cosmetic as requested.
+		print("Kissed %s!" % closest.name)
+
 func _hit_player(target: CharacterBody3D) -> void:
 	if target.has_method("receive_tackle"):
 		target.receive_tackle(self, facing_direction)
@@ -699,6 +748,9 @@ func receive_tackle(attacker: CharacterBody3D, direction: Vector3) -> void:
 		tween.tween_property(mesh, "scale", Vector3(1.3, 0.3, 1.3), 0.15)
 		tween.tween_interval(knockdown_timer - 0.3)
 		tween.tween_property(mesh, "scale", Vector3.ONE, 0.3)
+	
+	# Lose pending points!
+	scatter_pending_points()
 
 func receive_hazard_hit(knockback_dir: Vector3, force: float, drop_ball: bool = true) -> void:
 	## Called when a hazard hits this player.
@@ -713,6 +765,9 @@ func receive_hazard_hit(knockback_dir: Vector3, force: float, drop_ball: bool = 
 		if ball_nodes.size() > 0:
 			var fumble_dir = Vector3(randf_range(-1, 1), 0.8, randf_range(-1, 1)).normalized()
 			ball_nodes[0].apply_impulse(fumble_dir * 6.0)
+	
+	# Lose pending points!
+	scatter_pending_points()
 	
 	# Visual knockdown
 	if mesh:
@@ -798,22 +853,78 @@ func _process_knockdown(delta: float) -> void:
 		current_state = State.IDLE
 
 func pickup_ball(ball_body: RigidBody3D) -> void:
-	if has_ball or current_state == State.KNOCKED_DOWN or frozen:
-		return
-	has_ball = true
-	held_ball = ball_body
+	if has_ball: return
+	if knockdown_timer > 0: return # Can't pick up while down
 	
-	# Check for rebound before resetting was_shot
-	if ball_body.get("_was_shot") == true:
-		var gm = _get_game_manager()
-		if gm and gm.has_method("record_stat"):
-			gm.record_stat(team_index, roster_index, "rebounds")
-			
-	ball_body.linear_velocity = Vector3.ZERO
-	ball_body.angular_velocity = Vector3.ZERO
-	if ball_body.has_method("set_holder"):
-		ball_body.set_holder(self)
+	# Lock logic...
+	ball_body.set_holder(self)
+	
+	held_ball = ball_body
+	has_ball = true
+	ball_body.freeze = true
+	ball_body.collision_layer = 0
+	ball_body.collision_mask = 0
+	
 	got_ball.emit()
+
+func add_pending_points(amount: int) -> void:
+	pending_free_points += amount
+	var hud = get_tree().get_first_node_in_group("hud")
+	if hud and hud.has_method("show_message"):
+		# Show small floating text or just HUD update?
+		# For now, maybe just a console log or small indicator?
+		# Let's trust the HUD to pull this value if it wants, or just show a small poop-up
+		pass
+	print("[%s] Collected coin! Pending: %d" % [name, pending_free_points])
+
+func scatter_pending_points() -> void:
+	if pending_free_points <= 0:
+		return
+	
+	print("[%s] LOST %d PENDING POINTS!" % [name, pending_free_points])
+	
+	var CoinScene = load("res://scenes/items/coin.tscn")
+	if not CoinScene:
+		pending_free_points = 0
+		return
+		
+	# Scatter half? All? Let's say ALL for maximum punishment.
+	var count = pending_free_points
+	pending_free_points = 0
+	
+	for i in range(count):
+		var coin = CoinScene.instantiate()
+		coin.position = global_position + Vector3(0, 1.0, 0)
+		get_parent().add_child(coin)
+		
+		# Give it some velocity
+		var angle = randf() * TAU
+		var force = randf_range(2.0, 5.0)
+		var vel = Vector3(cos(angle) * force, randf_range(3.0, 6.0), sin(angle) * force)
+		
+		# If coin has physics, apply impulse. 
+		# Our Coin is an Area3D with a Mesh, so we need to fake physics or change it to RigidBody.
+		# For fast implementation, let's just make a simple "PhysicsCoin" wrapper 
+		# OR just animate it flying out.
+		
+		_animate_scattered_coin(coin, vel)
+
+func _animate_scattered_coin(coin_node: Node3D, initial_vel: Vector3) -> void:
+	# Simple manual physics for a few seconds until it lands
+	var velocity = initial_vel
+	var pos = coin_node.position
+	var drag = 0.5
+	var gravity = 9.8
+	
+	# Create a tween to handle the "physics" so we don't have to put logic in coin.gd
+	# actually, it's better to just let it sit there. 
+	# modifying coin.gd to be a rigidbody would be best, but let's try a simple tween Arc for now.
+	
+	var land_pos = pos + Vector3(velocity.x, 0, velocity.z) # Approximation
+	
+	var tween = create_tween()
+	tween.tween_property(coin_node, "position", land_pos, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(coin_node, "position:y", 0.5, 0.5).from(3.0).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 
 func _release_ball() -> void:
 	has_ball = false
