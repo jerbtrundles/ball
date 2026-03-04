@@ -192,26 +192,35 @@ func _process_pickup(body: Node3D) -> void:
 					p.apply_buff("freeze", buff_duration)
 			
 			# Icy Gaudy Message
-			var hud = get_tree().get_first_node_in_group("hud")
-			if hud and hud.has_method("show_gaudy_message"):
-				hud.show_gaudy_message("FREEZE!", 2.5, "ice")
+			if body.is_human:
+				var hud = get_tree().get_first_node_in_group("hud")
+				if hud and hud.has_method("show_gaudy_message"):
+					hud.show_gaudy_message("FREEZE!", 2.5, "ice")
+			elif body.has_method("show_floating_text"):
+				body.show_floating_text("FREEZE!", Color("00ffff"))
 				
 		else:
 			# Normal buff applies to the player who picked it up
 			var buff_name = type_names.get(power_type, "speed")
 			body.apply_buff(buff_name, buff_duration)
 			
-			if power_type == PowerUpType.ACCURACY:
+			if body.is_human:
 				var hud = get_tree().get_first_node_in_group("hud")
-				if hud and hud.has_method("show_gaudy_message"):
-					hud.show_gaudy_message("ACCURACY BONUS!", 2.0, "gold")
-			elif power_type == PowerUpType.SPEED:
-				var hud = get_tree().get_first_node_in_group("hud")
-				if hud and hud.has_method("show_gaudy_message"):
-					hud.show_gaudy_message("SPEED BONUS!", 1.5, "green")
-			elif power_type == PowerUpType.TACKLE:
-				var hud = get_tree().get_first_node_in_group("hud")
-				if hud and hud.has_method("show_gaudy_message"):
-					hud.show_gaudy_message("TACKLE BONUS!", 1.5, "red")
+				if power_type == PowerUpType.ACCURACY:
+					if hud and hud.has_method("show_gaudy_message"):
+						hud.show_gaudy_message("ACCURACY BONUS!", 2.0, "gold")
+				elif power_type == PowerUpType.SPEED:
+					if hud and hud.has_method("show_gaudy_message"):
+						hud.show_gaudy_message("SPEED BONUS!", 1.5, "green")
+				elif power_type == PowerUpType.TACKLE:
+					if hud and hud.has_method("show_gaudy_message"):
+						hud.show_gaudy_message("TACKLE BONUS!", 1.5, "red")
+			elif body.has_method("show_floating_text"):
+				if power_type == PowerUpType.ACCURACY:
+					body.show_floating_text("ACCURACY!", Color("ffd700"))
+				elif power_type == PowerUpType.SPEED:
+					body.show_floating_text("SPEED!", Color("00ff00"))
+				elif power_type == PowerUpType.TACKLE:
+					body.show_floating_text("TACKLE!", Color("ff0000"))
 		
 		queue_free()

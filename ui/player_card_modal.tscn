@@ -1,0 +1,62 @@
+[gd_scene format=3 uid="uid://cxqxy3q441g6d"]
+
+[ext_resource type="Script" path="res://ui/player_card_modal.gd" id="1_hx6p8"]
+
+[node name="PlayerCardModal" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_hx6p8")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+layout_mode = 2
+color = Color(0, 0, 0, 0.75)
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 2
+
+[node name="CardPanel" type="PanelContainer" parent="CenterContainer"]
+custom_minimum_size = Vector2(500, 650)
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="CenterContainer/CardPanel"]
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="TitleBox" type="VBoxContainer" parent="CenterContainer/CardPanel/VBox"]
+layout_mode = 2
+alignment = 1
+
+[node name="PlayerName" type="Label" parent="CenterContainer/CardPanel/VBox/TitleBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 36
+text = "PLAYER NAME"
+horizontal_alignment = 1
+
+[node name="PlayerOVR" type="Label" parent="CenterContainer/CardPanel/VBox/TitleBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.8, 0.2, 1)
+theme_override_font_sizes/font_size = 24
+text = "100 OVR"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="CenterContainer/CardPanel/VBox"]
+layout_mode = 2
+
+[node name="StatsGrid" type="VBoxContainer" parent="CenterContainer/CardPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="HSeparator2" type="HSeparator" parent="CenterContainer/CardPanel/VBox"]
+layout_mode = 2
+
+[node name="BtnClose" type="Button" parent="CenterContainer/CardPanel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 60)
+theme_override_font_sizes/font_size = 24
+text = "BACK"

@@ -44,3 +44,12 @@ collision_mask = 2
 [node name="TackleShape" type="CollisionShape3D" parent="TackleArea"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
 shape = SubResource("SphereShape3D_tackle")
+
+[node name="FloatingText" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, 0)
+billboard = 1
+double_sided = false
+text = ""
+font_size = 64
+outline_size = 16
+uppercase = true

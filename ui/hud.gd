@@ -18,6 +18,7 @@ var _gaudy_rot_tween: Tween = null
 
 func _ready() -> void:
 	add_to_group("hud")
+	set_process_input(true)
 	await get_tree().process_frame
 	game_manager = get_tree().get_first_node_in_group("game_manager")
 	if game_manager:
@@ -75,7 +76,7 @@ func _on_game_over(winner_team: int) -> void:
 	if message_label:
 		message_label.visible = true
 		if winner_team == -1:
-			message_label.text = "TIE GAME!"
+			message_label.text = "TIE GAME!\nPRESS ANY TO CONTINUE"
 		else:
 			var team_name = "BLUE"
 			var team_color = Color.BLUE
@@ -87,8 +88,16 @@ func _on_game_over(winner_team: int) -> void:
 					team_color = t_data.color_primary
 			
 			var verb = "WIN" if team_name.to_upper().ends_with("S") else "WINS"
-			message_label.text = "%s %s!" % [team_name.to_upper(), verb]
+			message_label.text = "%s %s!\nPRESS ANY TO CONTINUE" % [team_name.to_upper(), verb]
 			message_label.modulate = team_color
+
+func _input(event: InputEvent) -> void:
+	if game_manager and game_manager.match_state == 6: # MatchState.GAME_OVER
+		if event.is_action_pressed("ui_accept") or (event is InputEventMouseButton and event.pressed) or event.is_action_pressed("ui_cancel"):
+			if "is_season_game" in game_manager and game_manager.is_season_game:
+				get_tree().change_scene_to_file("res://ui/season_hub.tscn")
+			else:
+				get_tree().change_scene_to_file("res://ui/main_menu.tscn")
 
 func show_message(text: String, duration: float = 2.0, color: Color = Color.WHITE) -> void:
 	if message_label:

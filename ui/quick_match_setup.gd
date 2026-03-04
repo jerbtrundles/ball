@@ -2,16 +2,21 @@ extends Control
 
 # --- Team panels ---
 @onready var team_a_name: Label = $VBoxContainer/HBox_Teams/VBox_TeamA/TeamName
+@onready var team_a_rating: Label = $VBoxContainer/HBox_Teams/VBox_TeamA/TeamRating
 @onready var team_a_logo: TextureRect = $VBoxContainer/HBox_Teams/VBox_TeamA/LogoRect
 @onready var team_a_container: Control = $VBoxContainer/HBox_Teams/VBox_TeamA
 @onready var btn_a_up: Button = $VBoxContainer/HBox_Teams/VBox_TeamA/BtnUp
 @onready var btn_a_down: Button = $VBoxContainer/HBox_Teams/VBox_TeamA/BtnDown
 
 @onready var team_b_name: Label = $VBoxContainer/HBox_Teams/VBox_TeamB/TeamName
+@onready var team_b_rating: Label = $VBoxContainer/HBox_Teams/VBox_TeamB/TeamRating
 @onready var team_b_logo: TextureRect = $VBoxContainer/HBox_Teams/VBox_TeamB/LogoRect
 @onready var team_b_container: Control = $VBoxContainer/HBox_Teams/VBox_TeamB
 @onready var btn_b_up: Button = $VBoxContainer/HBox_Teams/VBox_TeamB/BtnUp
 @onready var btn_b_down: Button = $VBoxContainer/HBox_Teams/VBox_TeamB/BtnDown
+
+@onready var left_roster: VBoxContainer = $LeftMargin/LeftRoster
+@onready var right_roster: VBoxContainer = $RightMargin/RightRoster
 
 # --- Side selector ---
 @onready var zone_a: PanelContainer = $VBoxContainer/SideSelector/ZoneA
@@ -74,6 +79,7 @@ func _ready() -> void:
 	opt_team_size.add_item("4v4", 4)
 	opt_team_size.add_item("5v5", 5)
 	opt_team_size.select(0)
+	opt_team_size.item_selected.connect(func(_idx): _update_ui())
 	
 	# Court Picker — single display with ◀/▶ arrows
 	_build_court_display()
@@ -502,9 +508,14 @@ func _update_ui() -> void:
 	# Teams
 	team_a_name.text = t_a.name
 	team_a_name.add_theme_color_override("font_color", t_a.color_primary)
+	team_a_rating.text = "OVR: %d" % _get_team_rating(t_a)
+	team_a_rating.add_theme_color_override("font_color", t_a.color_primary.lightened(0.2))
 	team_a_logo.texture = t_a.logo
+	
 	team_b_name.text = t_b.name
 	team_b_name.add_theme_color_override("font_color", t_b.color_primary)
+	team_b_rating.text = "OVR: %d" % _get_team_rating(t_b)
+	team_b_rating.add_theme_color_override("font_color", t_b.color_primary.lightened(0.2))
 	team_b_logo.texture = t_b.logo
 	
 	# Arrow colors
@@ -539,6 +550,7 @@ func _update_ui() -> void:
 	
 	_update_team_panel_borders()
 	_update_court_display()
+	_update_side_rosters(t_a, t_b)
 
 func _style_zone_inactive(zone: PanelContainer) -> void:
 	var sb = StyleBoxFlat.new()
@@ -640,6 +652,122 @@ func _style_arrow_button(btn: Button) -> void:
 # =====================================================================
 #  ACTIONS
 # =====================================================================
+
+func _update_side_rosters(team_a: Resource, team_b: Resource) -> void:
+	for child in left_roster.get_children(): child.queue_free()
+	for child in right_roster.get_children(): child.queue_free()
+	
+	var max_size = opt_team_size.get_selected_id()
+	_build_roster_cards(team_a, left_roster, max_size, team_a.color_primary)
+	_build_roster_cards(team_b, right_roster, max_size, team_b.color_primary)
+
+func _build_roster_cards(team: Resource, container: VBoxContainer, max_size: int, theme_color: Color) -> void:
+	container.alignment = BoxContainer.ALIGNMENT_CENTER
+	
+	var header_lbl = Label.new()
+	header_lbl.text = "%s Roster" % team.name
+	header_lbl.add_theme_font_size_override("font_size", 18)
+	header_lbl.add_theme_color_override("font_color", theme_color.lightened(0.3))
+	header_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	container.add_child(header_lbl)
+	
+	var count = min(team.roster.size(), max_size)
+	for i in range(count):
+		var p = team.roster[i]
+		
+		var pnl = PanelContainer.new()
+		pnl.gui_input.connect(func(event):
+			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+				_show_player_card(p, theme_color)
+		)
+		
+		var sb_normal = StyleBoxFlat.new()
+		sb_normal.bg_color = Color(0.1, 0.1, 0.15, 0.8)
+		sb_normal.border_color = theme_color.darkened(0.3)
+		sb_normal.set_border_width_all(2)
+		sb_normal.set_corner_radius_all(6)
+		sb_normal.set_content_margin_all(8)
+		
+		var sb_hover = sb_normal.duplicate()
+		sb_hover.bg_color = Color(0.15, 0.15, 0.22, 0.95)
+		sb_hover.border_color = theme_color.lightened(0.2)
+		
+		pnl.add_theme_stylebox_override("panel", sb_normal)
+		pnl.mouse_entered.connect(func(): pnl.add_theme_stylebox_override("panel", sb_hover))
+		pnl.mouse_exited.connect(func(): pnl.add_theme_stylebox_override("panel", sb_normal))
+		
+		var vbox = VBoxContainer.new()
+		pnl.add_child(vbox)
+		
+		var header_hbox = HBoxContainer.new()
+		vbox.add_child(header_hbox)
+		
+		var name_lbl = Label.new()
+		name_lbl.text = p.name
+		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_lbl.add_theme_font_size_override("font_size", 16)
+		name_lbl.add_theme_color_override("font_color", theme_color.lightened(0.2))
+		header_hbox.add_child(name_lbl)
+		
+		var ovr_lbl = Label.new()
+		var p_ovr = int(round((p.speed + p.shot + p.pass_skill + p.tackle + p.strength + p.aggression) / 6.0))
+		ovr_lbl.text = "OVR: %d" % p_ovr
+		ovr_lbl.add_theme_font_size_override("font_size", 14)
+		ovr_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
+		header_hbox.add_child(ovr_lbl)
+		
+		var stat_grid = GridContainer.new()
+		stat_grid.columns = 6
+		stat_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		stat_grid.add_theme_constant_override("h_separation", 10)
+		vbox.add_child(stat_grid)
+		
+		var stats_keys = ["speed", "shot", "pass_skill", "tackle", "strength", "aggression"]
+		var stats_labels = ["SPD", "SHT", "PAS", "TCK", "STR", "AGG"]
+		
+		for j in range(6):
+			var s_val = p.get(stats_keys[j])
+			var s_vbox = VBoxContainer.new()
+			s_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			s_vbox.add_theme_constant_override("separation", 0)
+			
+			var s_lbl = Label.new()
+			s_lbl.text = stats_labels[j]
+			s_lbl.add_theme_font_size_override("font_size", 9)
+			s_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+			s_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			s_vbox.add_child(s_lbl)
+			
+			var v_lbl = Label.new()
+			v_lbl.text = str(int(s_val))
+			v_lbl.add_theme_font_size_override("font_size", 12)
+			
+			var c = Color.WHITE
+			if s_val >= 80: c = Color.GREEN_YELLOW
+			elif s_val >= 50: c = Color.WHITE
+			else: c = Color(1.0, 0.5, 0.5)
+			
+			v_lbl.add_theme_color_override("font_color", c)
+			v_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			s_vbox.add_child(v_lbl)
+			
+			stat_grid.add_child(s_vbox)
+		
+		container.add_child(pnl)
+
+func _show_player_card(player: Resource, theme_color: Color) -> void:
+	var m_scene = load("res://ui/player_card_modal.tscn")
+	var m_inst = m_scene.instantiate()
+	add_child(m_inst)
+	m_inst.setup(player, theme_color)
+
+func _get_team_rating(team: Resource) -> int:
+	if team.roster.is_empty(): return 0
+	var total = 0.0
+	for p in team.roster:
+		var p_rating = (p.speed + p.shot + p.pass_skill + p.tackle + p.strength + p.aggression) / 6.0
+		total += p_rating
+	return int(round(total / team.roster.size()))
 
 func _on_start_pressed() -> void:
 	var t_a = available_teams[team_a_index]

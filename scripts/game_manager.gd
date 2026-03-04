@@ -20,6 +20,7 @@ enum MatchState { PRE_GAME, TIP_OFF, PLAYING, SCORED, THROW_IN, QUARTER_BREAK, G
 # --- State ---
 var match_state: MatchState = MatchState.PRE_GAME
 var is_debug: bool = false
+var is_season_game: bool = false
 var current_quarter: int = 1
 var time_remaining: float = 0.0
 var scores: Array[int] = [0, 0]
@@ -102,6 +103,7 @@ func setup_match(team0_data: Resource, team1_data: Resource, config: Dictionary 
 		time_remaining = quarter_duration
 	
 	is_debug = config.get("is_debug", false)
+	is_season_game = config.get("is_season_game", false)
 	
 	var items_enabled = config.get("items_enabled", true)
 	var human_team = config.get("human_team_index", 0)
@@ -185,10 +187,11 @@ func _spawn_team(team_data: Resource, team_idx: int, player_scene: PackedScene, 
 				ai.player = player
 		
 		# Apply Stats
-		player.move_speed = 6.0 + (p_data.speed * 0.4)
-		player.shot_power = 10.0 + (p_data.shot * 0.5)
-		player.tackle_force = 12.0 + (p_data.tackle * 0.6)
-		player.strength = 1.0 + (p_data.strength * 0.1)
+		player.move_speed = 6.0 + (p_data.speed * 0.04)
+		player.shot_power = 10.0 + (p_data.shot * 0.05)
+		player.pass_power = 12.0 + (p_data.pass_skill * 0.05)
+		player.tackle_force = 12.0 + (p_data.tackle * 0.06)
+		player.strength = 1.0 + (p_data.strength * 0.01)
 		player.aggressiveness = p_data.aggression
 		
 		# Colors
@@ -423,19 +426,25 @@ func _do_inbound_pass(inbound_team: int, endline_z: float) -> void:
 	var inbound_z = endline_z + sign(endline_z) * 1.5
 	var inbound_pos = Vector3(inbound_x, 0.1, inbound_z)
 	
-	# Pick the inbounder — use a non-center player if possible
+	# Pick the inbounder — ensure CPU inbounds and human receives if possible
 	var inbounder = null
 	var receivers = []
+	var human_player = null
+	
+	for p in teams[inbound_team]:
+		if p.is_human:
+			human_player = p
+			
 	for i in range(teams[inbound_team].size()):
 		var p = teams[inbound_team][i]
-		if i == 0 and teams[inbound_team].size() > 1:
-			# Center player is the inbounder
+		if p != human_player and inbounder == null:
 			inbounder = p
 		else:
 			receivers.append(p)
 	
 	if inbounder == null and teams[inbound_team].size() > 0:
 		inbounder = teams[inbound_team][0]
+		receivers.erase(inbounder)
 	
 	if inbounder == null:
 		match_state = MatchState.PLAYING
@@ -475,6 +484,9 @@ func _do_inbound_pass(inbound_team: int, endline_z: float) -> void:
 	# Give ball directly to inbounder (bypasses physics entirely)
 	_force_give_ball_to(inbounder)
 	
+	# Keep the inbounder facing the court
+	inbounder.rotation.y = PI if endline_z > 0 else 0
+	
 	# HUD
 	var hud = get_tree().get_first_node_in_group("hud")
 	var team_name = "BLUE"
@@ -494,22 +506,32 @@ func _do_inbound_pass(inbound_team: int, endline_z: float) -> void:
 	
 	# Find nearest receiver to pass to
 	var best_recv = null
-	var best_dist = 99999.0
-	for r in receivers:
-		var d = r.global_position.distance_to(inbounder.global_position)
-		if d < best_dist:
-			best_dist = d
-			best_recv = r
+	if human_player != null and human_player in receivers:
+		best_recv = human_player
+	else:
+		var best_dist = 99999.0
+		for r in receivers:
+			var d = r.global_position.distance_to(inbounder.global_position)
+			if d < best_dist:
+				best_dist = d
+				best_recv = r
 	
-	# Unfreeze everyone and auto-pass
+	# Unfreeze everyone
 	_freeze_all_players(false)
+	
+	# Freeze the inbounder briefly again so they don't walk into the pass or out of bounds
+	if "frozen" in inbounder:
+		inbounder.frozen = true
+	
 	if ball:
 		ball.freeze = false  # Re-enable physics for the pass
 	
 	if best_recv and inbounder.has_ball:
 		inbounder.pass_to_player(best_recv)
 	
-	await get_tree().create_timer(1.5).timeout
+	await get_tree().create_timer(0.5).timeout
+	if "frozen" in inbounder:
+		inbounder.frozen = false
 	
 	if ball:
 		ball._oob_disabled = false
@@ -552,14 +574,15 @@ func award_score(scoring_team: int, points: int, stop_game: bool = true) -> void
 			
 			# Notify
 			var hud = get_tree().get_first_node_in_group("hud")
-			if hud and hud.has_method("show_gaudy_message"):
-				var team_name = "BLUE" if scoring_team == 0 else "RED"
-				if team_data_store[scoring_team]:
-					team_name = team_data_store[scoring_team].name
-				hud.show_gaudy_message("BANKED %d FREE POINTS!" % banked, 3.0)
-				
-				# Re-emit score update with new total
-				score_changed.emit(scoring_team, scores[scoring_team])
+			if shooter.is_human:
+				if hud and hud.has_method("show_gaudy_message"):
+					hud.show_gaudy_message("BANKED %d FREE POINTS!" % banked, 3.0)
+			else:
+				if shooter.has_method("show_floating_text"):
+					shooter.show_floating_text("BANKED %d!" % banked, Color.GOLD)
+					
+			# Re-emit score update with new total
+			score_changed.emit(scoring_team, scores[scoring_team])
 	
 	if not stop_game:
 		free_points[scoring_team] += points
@@ -610,7 +633,7 @@ func award_score(scoring_team: int, points: int, stop_game: bool = true) -> void
 #  COIN COMBO RESET
 # =========================================================
 
-func record_coin_pickup_combo(team_index: int) -> void:
+func record_coin_pickup_combo(team_index: int, player: CharacterBody3D = null) -> void:
 	if team_index == _coin_combo_team:
 		_coin_combo_count += 1
 	else:
@@ -625,10 +648,16 @@ func record_coin_pickup_combo(team_index: int) -> void:
 	var msg = "FREE POINTS - %s" % team_name
 	if _coin_combo_count > 1:
 		msg += " x %d" % _coin_combo_count
-	var hud = get_tree().get_first_node_in_group("hud")
-	if hud and hud.has_method("show_gaudy_message"):
-		var hud_color = Color.GOLD if team_index == 0 else Color(1.0, 0.8, 0.0)
-		hud.show_gaudy_message(msg, 2.0, "gold") # the hud uses strings for gaudy sometimes, or we can just pass msg
+		
+	if player and not player.is_human:
+		if player.has_method("show_floating_text"):
+			var float_color = Color.GOLD if team_index == 0 else Color(1.0, 0.8, 0.0)
+			player.show_floating_text("+1 POINT%s" % (" x%d" % _coin_combo_count if _coin_combo_count > 1 else ""), float_color)
+	else:
+		var hud = get_tree().get_first_node_in_group("hud")
+		if hud and hud.has_method("show_gaudy_message"):
+			var hud_color = Color.GOLD if team_index == 0 else Color(1.0, 0.8, 0.0)
+			hud.show_gaudy_message(msg, 2.0, "gold") # the hud uses strings for gaudy sometimes, or we can just pass msg
 	
 	# Auto-reset combo after window expires (only if no new coins picked up)
 	_start_combo_reset(my_id)
@@ -647,6 +676,9 @@ func _start_combo_reset(combo_id: int) -> void:
 func _on_ball_out_of_bounds(last_touch_team: int, oob_position: Vector3) -> void:
 	if match_state != MatchState.PLAYING:
 		return
+	
+	# Added this log to make sure nothing slipped through
+	print("[GameManager] OOB Triggered. Current state: ", match_state)
 	
 	match_state = MatchState.THROW_IN
 	_strip_ball_from_all()
@@ -702,15 +734,25 @@ func _do_sideline_inbound(inbound_team: int, court_spot: Vector3, oob_pos: Vecto
 		# Went out on an endline (Z boundary)
 		inbounder_pos.z = sign(oob_pos.z) * (court_half_l + 1.0)
 	
-	# Pick inbounder (first available player on the team)
+	# Pick inbounder (CPU player if possible, so human can receive)
 	var inbounder = null
 	var receivers = []
+	var human_player = null
+	
+	for p in teams[inbound_team]:
+		if p.is_human:
+			human_player = p
+			
 	for i in range(teams[inbound_team].size()):
 		var p = teams[inbound_team][i]
-		if inbounder == null:
+		if p != human_player and inbounder == null:
 			inbounder = p
 		else:
 			receivers.append(p)
+			
+	if inbounder == null and teams[inbound_team].size() > 0:
+		inbounder = teams[inbound_team][0]
+		receivers.erase(inbounder)
 	
 	if inbounder == null:
 		_freeze_all_players(false)
@@ -757,12 +799,15 @@ func _do_sideline_inbound(inbound_team: int, court_spot: Vector3, oob_pos: Vecto
 	
 	# Find best receiver and pass
 	var best_recv = null
-	var best_dist = 99999.0
-	for r in receivers:
-		var d = r.global_position.distance_to(inbounder.global_position)
-		if d < best_dist:
-			best_dist = d
-			best_recv = r
+	if human_player != null and human_player in receivers:
+		best_recv = human_player
+	else:
+		var best_dist = 99999.0
+		for r in receivers:
+			var d = r.global_position.distance_to(inbounder.global_position)
+			if d < best_dist:
+				best_dist = d
+				best_recv = r
 	
 	# Unfreeze and pass
 	_freeze_all_players(false)
@@ -932,6 +977,22 @@ func _end_game() -> void:
 	_set_hazard_spawning(false)
 	_clear_hazards()
 	var winner = 0 if scores[0] > scores[1] else (1 if scores[1] > scores[0] else -1)
+	
+	if is_season_game and LeagueManager.player_team:
+		var p_score = 0
+		var o_score = 0
+		var opponent = null
+		if team_data_store[0] == LeagueManager.player_team:
+			p_score = scores[0]
+			o_score = scores[1]
+			opponent = team_data_store[1]
+		elif team_data_store[1] == LeagueManager.player_team:
+			p_score = scores[1]
+			o_score = scores[0]
+			opponent = team_data_store[0]
+			
+		LeagueManager.record_season_match_result(p_score, o_score, opponent)
+		
 	game_over.emit(winner)
 
 func get_score(team_index: int) -> int:

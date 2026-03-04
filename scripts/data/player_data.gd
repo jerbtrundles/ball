@@ -2,6 +2,7 @@ extends Resource
 class_name PlayerData
 
 @export var name: String = "Player"
+@export var number: int = 0
 @export var cost: int = 100
 @export var face_seed: int = 0  # For procedural face generation
 
@@ -13,19 +14,25 @@ class_name PlayerData
 @export var strength: float = 5.0
 @export var aggression: float = 5.0
 
+# Active Season Stats
+@export var pts: int = 0
+@export var reb: int = 0
+@export var ast: int = 0
+@export var blk: int = 0
+
 func _init(p_name: String = "Unknown", p_cost: int = 100):
 	name = p_name
 	cost = p_cost
 	face_seed = randi()
 
 func randomize_stats(tier: int = 1):
-	# Tier 1 (Bronze): 3-6 average
-	# Tier 2 (Silver): 5-8 average
-	# Tier 3 (Gold): 7-10 average
-	var base = tier * 2.0 + 1.0
-	speed = clampf(base + randf_range(-2, 2), 1, 10)
-	shot = clampf(base + randf_range(-2, 2), 1, 10)
-	pass_skill = clampf(base + randf_range(-2, 2), 1, 10)
-	tackle = clampf(base + randf_range(-2, 2), 1, 10)
-	strength = clampf(base + randf_range(-2, 2), 1, 10)
-	aggression = clampf(base + randf_range(-2, 2), 1, 10)
+	# Tier 1 (Bronze): 40 base
+	# Tier 2 (Silver): 60 base
+	# Tier 3 (Gold): 80 base
+	var base = float(tier) * 20.0 + 20.0
+	speed = clampf(round(randfn(base, 15.0)), 10.0, 99.0)
+	shot = clampf(round(randfn(base, 15.0)), 10.0, 99.0)
+	pass_skill = clampf(round(randfn(base, 15.0)), 10.0, 99.0)
+	tackle = clampf(round(randfn(base, 15.0)), 10.0, 99.0)
+	strength = clampf(round(randfn(base, 15.0)), 10.0, 99.0)
+	aggression = clampf(round(randfn(base, 15.0)), 10.0, 99.0)

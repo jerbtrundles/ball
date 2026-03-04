@@ -19,6 +19,36 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.05, 0.05, 0.12, 1)
+[node name="LeftMargin" type="MarginContainer" parent="." unique_id=146039185]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 300.0
+grow_vertical = 2
+theme_override_constants/margin_left = 40
+theme_override_constants/margin_top = 40
+theme_override_constants/margin_bottom = 40
+
+[node name="LeftRoster" type="VBoxContainer" parent="LeftMargin" unique_id=604719582]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="RightMargin" type="MarginContainer" parent="." unique_id=173000518]
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -300.0
+grow_horizontal = 0
+grow_vertical = 2
+theme_override_constants/margin_top = 40
+theme_override_constants/margin_right = 40
+theme_override_constants/margin_bottom = 40
+
+[node name="RightRoster" type="VBoxContainer" parent="RightMargin" unique_id=819771146]
+layout_mode = 2
+theme_override_constants/separation = 10
 
 [node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=1738970573]
 layout_mode = 1
@@ -27,10 +57,10 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -460.0
-offset_top = -310.0
-offset_right = 460.0
-offset_bottom = 310.0
+offset_left = -580.0
+offset_top = -400.0
+offset_right = 580.0
+offset_bottom = 400.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 10
@@ -50,7 +80,7 @@ theme_override_constants/separation = 20
 alignment = 1
 
 [node name="VBox_TeamA" type="VBoxContainer" parent="VBoxContainer/HBox_Teams" unique_id=1280289170]
-custom_minimum_size = Vector2(240, 0)
+custom_minimum_size = Vector2(400, 450)
 layout_mode = 2
 theme_override_constants/separation = 4
 alignment = 1
@@ -68,14 +98,22 @@ text = "▲"
 flat = true
 
 [node name="LogoRect" type="TextureRect" parent="VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=1185547767]
-custom_minimum_size = Vector2(64, 64)
+custom_minimum_size = Vector2(300, 300)
 layout_mode = 2
+size_flags_vertical = 3
+expand_mode = 1
 stretch_mode = 5
 
 [node name="TeamName" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=1711092275]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
+theme_override_font_sizes/font_size = 22
 text = "Team A"
+horizontal_alignment = 1
+
+[node name="TeamRating" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=499698785]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "OVR: 50"
 horizontal_alignment = 1
 
 [node name="BtnDown" type="Button" parent="VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=528926888]
@@ -92,7 +130,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="VBox_TeamB" type="VBoxContainer" parent="VBoxContainer/HBox_Teams" unique_id=315274769]
-custom_minimum_size = Vector2(240, 0)
+custom_minimum_size = Vector2(400, 450)
 layout_mode = 2
 theme_override_constants/separation = 4
 alignment = 1
@@ -110,14 +148,22 @@ text = "▲"
 flat = true
 
 [node name="LogoRect" type="TextureRect" parent="VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=1187915855]
-custom_minimum_size = Vector2(64, 64)
+custom_minimum_size = Vector2(300, 300)
 layout_mode = 2
+size_flags_vertical = 3
+expand_mode = 1
 stretch_mode = 5
 
 [node name="TeamName" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=584400462]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
+theme_override_font_sizes/font_size = 22
 text = "Team B"
+horizontal_alignment = 1
+
+[node name="TeamRating" type="Label" parent="VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=319485947]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "OVR: 50"
 horizontal_alignment = 1
 
 [node name="BtnDown" type="Button" parent="VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=860891780]

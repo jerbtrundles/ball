@@ -58,6 +58,7 @@ var input_call_pass: bool = false  # Press pass when you don't have the ball
 var input_jump: bool = false
 var input_kiss: bool = false
 var kiss_cooldown: float = 0.0
+var pickup_cooldown: float = 0.0
 
 # --- References ---
 var held_ball: RigidBody3D = null
@@ -65,6 +66,7 @@ var held_ball: RigidBody3D = null
 @onready var collision_shape: CollisionShape3D = $CollisionShape
 @onready var tackle_area: Area3D = $TackleArea
 @onready var ball_pickup_area: Area3D = $BallPickupArea
+@onready var floating_text: Label3D = $FloatingText
 @onready var team_color_material: StandardMaterial3D = StandardMaterial3D.new()
 
 # Team colors
@@ -264,6 +266,18 @@ func _physics_process(delta: float) -> void:
 	
 	if kiss_cooldown > 0:
 		kiss_cooldown -= delta
+		
+	if pickup_cooldown > 0:
+		pickup_cooldown -= delta
+		
+	# Continuous check for missed ball pickup (Area3D signals can drop during state/layer changes)
+	if not has_ball and current_state != State.KNOCKED_DOWN and not frozen and pickup_cooldown <= 0 and ball_pickup_area:
+		for body in ball_pickup_area.get_overlapping_bodies():
+			if body.is_in_group("ball"):
+				var ball_script = body as RigidBody3D
+				if ball_script and ball_script.has_method("is_held") and not ball_script.is_held():
+					pickup_ball(body)
+					break
 	
 	# Buff timer and animation
 	if _buff_indicator_mesh and _buff_indicator_mesh.visible:
@@ -713,13 +727,16 @@ func do_kiss() -> void:
 		# Heart Particles?
 		# We can spawn a simple label or particle if we had one.
 		# For now, just the gaudy message.
-		
-		var hud = get_tree().get_first_node_in_group("hud")
-		if hud and hud.has_method("show_gaudy_message"):
-			var msg = "SMOOCH!"
-			var p_name = closest.player_name if "player_name" in closest else "Player"
-			msg = "SMOOCH! %s + %s" % [player_name, p_name]
-			hud.show_gaudy_message(msg, 3.0)
+		var p_name = closest.player_name if "player_name" in closest else "Player"
+		if is_human or closest.is_human:
+			var hud = get_tree().get_first_node_in_group("hud")
+			if hud and hud.has_method("show_gaudy_message"):
+				var msg = "SMOOCH! %s + %s" % [player_name, p_name]
+				hud.show_gaudy_message(msg, 3.0)
+		else:
+			show_floating_text("SMOOCH!", Color(1.0, 0.4, 0.6))
+			if closest.has_method("show_floating_text"):
+				closest.show_floating_text("SMOOCH!", Color(1.0, 0.4, 0.6))
 		
 		# Maybe heal them or something?
 		# For now purely cosmetic as requested.
@@ -841,8 +858,8 @@ func _expire_buff() -> void:
 
 func _process_tackle(delta: float) -> void:
 	# Decelerate during tackle
-	velocity.x = move_toward(velocity.x, 0, 20.0 * delta)
-	velocity.z = move_toward(velocity.z, 0, 20.0 * delta)
+	velocity.x = move_toward(velocity.x, 0, 60.0 * delta)
+	velocity.z = move_toward(velocity.z, 0, 60.0 * delta)
 	if not is_on_floor():
 		velocity.y -= 20.0 * delta
 	move_and_slide()
@@ -879,8 +896,29 @@ func add_pending_points(amount: int) -> void:
 	pending_free_points += amount
 	var game_mgr = _get_game_manager()
 	if game_mgr and game_mgr.has_method("record_coin_pickup_combo"):
-		game_mgr.record_coin_pickup_combo(team_index)
+		game_mgr.record_coin_pickup_combo(team_index, self)
 	print("[%s] Collected coin! Pending: %d" % [name, pending_free_points])
+	
+	if is_human:
+		var hud = get_tree().get_first_node_in_group("hud")
+		if hud and hud.has_method("show_gaudy_message"):
+			hud.show_gaudy_message("+%d FREE POINTS (TOTAL: %d)!" % [amount, pending_free_points], 1.5)
+	else:
+		show_floating_text("+%d PTS" % amount, Color.GOLD)
+
+func show_floating_text(msg: String, color: Color = Color.WHITE) -> void:
+	if not floating_text:
+		return
+	floating_text.text = msg
+	floating_text.modulate = color
+	floating_text.position = Vector3(0, 2.2, 0)
+	floating_text.visible = true
+	
+	# Animate float up and fade out
+	var tween = create_tween()
+	tween.tween_property(floating_text, "position:y", 3.2, 1.5).set_trans(Tween.TRANS_SINE)
+	tween.parallel().tween_property(floating_text, "modulate:a", 0.0, 1.5)
+	tween.tween_callback(func(): floating_text.visible = false)
 
 func scatter_pending_points() -> void:
 	if pending_free_points <= 0:
@@ -933,6 +971,7 @@ func _animate_scattered_coin(coin_node: Node3D, initial_vel: Vector3) -> void:
 
 func _release_ball() -> void:
 	has_ball = false
+	pickup_cooldown = 0.5  # Prevent instantly grabbing it back during the same frame or before it exits Area3D
 	if held_ball:
 		held_ball.freeze = false  # Always unfreeze when releasing
 		if held_ball.has_method("release"):
@@ -940,7 +979,7 @@ func _release_ball() -> void:
 	lost_ball.emit()
 
 func _on_ball_entered(body: Node3D) -> void:
-	if body.is_in_group("ball") and not has_ball and current_state != State.KNOCKED_DOWN and not frozen:
+	if body.is_in_group("ball") and not has_ball and current_state != State.KNOCKED_DOWN and not frozen and pickup_cooldown <= 0:
 		# Check if any other player already has the ball
 		var ball_script = body as RigidBody3D
 		if ball_script and ball_script.has_method("is_held") and ball_script.is_held():

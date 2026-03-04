@@ -8,6 +8,9 @@ class_name TeamData
 @export var roster: Array[Resource] = []
 @export var wins: int = 0
 @export var losses: int = 0
+@export var pf: int = 0
+@export var pa: int = 0
+@export var streak: int = 0
 @export var division_rank: int = 0
 
 func _init(p_name: String = "New Team", p_color: Color = Color.BLUE):
@@ -21,3 +24,6 @@ func add_player(player: Resource):
 func reset_record():
 	wins = 0
 	losses = 0
+	pf = 0
+	pa = 0
+	streak = 0
