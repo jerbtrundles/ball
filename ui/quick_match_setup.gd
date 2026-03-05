@@ -703,7 +703,7 @@ func _build_roster_cards(team: Resource, container: VBoxContainer, max_size: int
 		vbox.add_child(header_hbox)
 		
 		var name_lbl = Label.new()
-		name_lbl.text = p.name
+		name_lbl.text = " #%d %s" % [p.number, p.name]
 		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_lbl.add_theme_font_size_override("font_size", 16)
 		name_lbl.add_theme_color_override("font_color", theme_color.lightened(0.2))
@@ -716,42 +716,75 @@ func _build_roster_cards(team: Resource, container: VBoxContainer, max_size: int
 		ovr_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
 		header_hbox.add_child(ovr_lbl)
 		
+		var stat_panel = PanelContainer.new()
+		var stat_bg = StyleBoxFlat.new()
+		stat_bg.bg_color = Color(0.08, 0.08, 0.12, 0.7)
+		stat_bg.border_color = theme_color.darkened(0.4)
+		stat_bg.set_border_width_all(1)
+		stat_bg.set_corner_radius_all(6)
+		stat_bg.set_content_margin_all(8)
+		stat_panel.add_theme_stylebox_override("panel", stat_bg)
+		vbox.add_child(stat_panel)
+
 		var stat_grid = GridContainer.new()
-		stat_grid.columns = 6
+		stat_grid.columns = 2
 		stat_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		stat_grid.add_theme_constant_override("h_separation", 10)
-		vbox.add_child(stat_grid)
+		stat_grid.add_theme_constant_override("h_separation", 20)
+		stat_grid.add_theme_constant_override("v_separation", 6)
+		stat_panel.add_child(stat_grid)
 		
 		var stats_keys = ["speed", "shot", "pass_skill", "tackle", "strength", "aggression"]
 		var stats_labels = ["SPD", "SHT", "PAS", "TCK", "STR", "AGG"]
 		
 		for j in range(6):
-			var s_val = p.get(stats_keys[j])
-			var s_vbox = VBoxContainer.new()
-			s_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			s_vbox.add_theme_constant_override("separation", 0)
+			var s_val = float(p.get(stats_keys[j]))
+			var s_hbox = HBoxContainer.new()
+			s_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			
 			var s_lbl = Label.new()
 			s_lbl.text = stats_labels[j]
-			s_lbl.add_theme_font_size_override("font_size", 9)
+			s_lbl.custom_minimum_size = Vector2(28, 0)
+			s_lbl.add_theme_font_size_override("font_size", 12)
 			s_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
-			s_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			s_vbox.add_child(s_lbl)
+			s_hbox.add_child(s_lbl)
+			
+			var bar = ProgressBar.new()
+			bar.min_value = 0
+			bar.max_value = 100
+			bar.value = s_val
+			bar.show_percentage = false
+			bar.custom_minimum_size = Vector2(0, 10)
+			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			
+			var sb_bar_bg = StyleBoxFlat.new()
+			sb_bar_bg.bg_color = Color(0.05, 0.05, 0.05, 0.8)
+			sb_bar_bg.set_corner_radius_all(3)
+			bar.add_theme_stylebox_override("background", sb_bar_bg)
+			
+			var c = Color.WHITE
+			if s_val <= 50.0:
+				var pt = s_val / 50.0
+				c = Color(0.2, 0.1, 0.4).lerp(Color(0.1, 0.5, 0.9), pt)
+			else:
+				var pt = (s_val - 50.0) / 50.0
+				c = Color(0.1, 0.5, 0.9).lerp(Color(0.5, 1.0, 1.0), pt)
+					
+			var sb_fill = StyleBoxFlat.new()
+			sb_fill.bg_color = c
+			sb_fill.set_corner_radius_all(3)
+			bar.add_theme_stylebox_override("fill", sb_fill)
+			s_hbox.add_child(bar)
 			
 			var v_lbl = Label.new()
 			v_lbl.text = str(int(s_val))
+			v_lbl.custom_minimum_size = Vector2(22, 0)
+			v_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			v_lbl.add_theme_font_size_override("font_size", 12)
-			
-			var c = Color.WHITE
-			if s_val >= 80: c = Color.GREEN_YELLOW
-			elif s_val >= 50: c = Color.WHITE
-			else: c = Color(1.0, 0.5, 0.5)
-			
 			v_lbl.add_theme_color_override("font_color", c)
-			v_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			s_vbox.add_child(v_lbl)
+			s_hbox.add_child(v_lbl)
 			
-			stat_grid.add_child(s_vbox)
+			stat_grid.add_child(s_hbox)
 		
 		container.add_child(pnl)
 

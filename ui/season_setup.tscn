@@ -42,7 +42,7 @@ theme_override_constants/separation = 15
 [node name="Title" type="Label" parent="MainHBox/VBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 48
-text = "NEW SEASON"
+text = "NEW FRANCHISE"
 horizontal_alignment = 1
 
 [node name="Subtitle" type="Label" parent="MainHBox/VBoxContainer"]
@@ -155,7 +155,7 @@ layout_mode = 2
 [node name="BtnStart" type="Button" parent="MainHBox/VBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 32
-text = "START SEASON"
+text = "START SEASON 1"
 
 [node name="BtnBack" type="Button" parent="MainHBox/VBoxContainer"]
 layout_mode = 2
@@ -198,7 +198,7 @@ layout_mode = 2
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
 theme_override_colors/font_color = Color(0.9, 0.4, 0.4, 1)
-text = "REGENERATE TEAM"
+text = "🎲 REGENERATE TEAM"
 
 [node name="ItemsModal" type="PanelContainer" parent="."]
 visible = false

@@ -170,7 +170,7 @@ func _spawn_team(team_data: Resource, team_idx: int, player_scene: PackedScene, 
 		player.team_index = team_idx
 		player.roster_index = i
 		player.player_name = p_data.name
-		player.jersey_number = 10 + i 
+		player.jersey_number = p_data.number if "number" in p_data else (10 + i) 
 		if "logo" in team_data:
 			player.team_logo = team_data.logo
 		
@@ -264,7 +264,7 @@ func _find_teams() -> void:
 func _add_jersey_labels(player_node: CharacterBody3D) -> void:
 	# Remove existing jersey labels (if already there)
 	for child in player_node.get_children():
-		if child.name.begins_with("JerseyNum_") or child.name == "JerseyLogo":
+		if child.name.begins_with("JerseyNum_") or child.name.begins_with("JerseyName_") or child.name == "JerseyLogo":
 			child.queue_free()
 	
 	var num = player_node.jersey_number if "jersey_number" in player_node else 0
@@ -273,16 +273,68 @@ func _add_jersey_labels(player_node: CharacterBody3D) -> void:
 		var label = Label3D.new()
 		label.name = "JerseyNum_Front"
 		label.text = str(num)
-		label.font_size = 96
+		label.font_size = 64
 		label.pixel_size = 0.004
-		label.position = Vector3(0, 0.85, -0.37)
-		label.rotation.y = PI
+		label.position = Vector3(0, 0.72, 0.37) # Front is +Z
 		label.modulate = Color.WHITE
 		label.outline_modulate = Color.BLACK
 		label.outline_size = 12
 		label.no_depth_test = false
 		label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 		player_node.add_child(label)
+		
+		var num_label_back = Label3D.new()
+		num_label_back.name = "JerseyNum_Back"
+		num_label_back.text = str(num)
+		num_label_back.font_size = 80
+		num_label_back.pixel_size = 0.004
+		num_label_back.position = Vector3(0, 0.85, -0.37) # Back is -Z
+		num_label_back.rotation.y = PI
+		num_label_back.modulate = Color.WHITE
+		num_label_back.outline_modulate = Color.BLACK
+		num_label_back.outline_size = 12
+		num_label_back.no_depth_test = false
+		num_label_back.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+		player_node.add_child(num_label_back)
+		
+	var p_name = player_node.player_name if "player_name" in player_node else "PLAYER"
+	var name_parts = p_name.split(" ")
+	var last_name = name_parts[name_parts.size() - 1].to_upper() if name_parts.size() > 0 else "PLAYER"
+	
+	var name_label = Label3D.new()
+	name_label.name = "JerseyName_Back"
+	name_label.text = last_name
+	name_label.font_size = 32
+	name_label.pixel_size = 0.004
+	name_label.position = Vector3(0, 1.05, -0.37) # Back is -Z
+	name_label.rotation.y = PI
+	name_label.modulate = Color.WHITE
+	name_label.outline_modulate = Color.BLACK
+	name_label.outline_size = 12
+	name_label.no_depth_test = false
+	name_label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	player_node.add_child(name_label)
+	
+	# Team Name Front
+	var team_idx = player_node.team_index if "team_index" in player_node else 0
+	var team_name_str = "TEAM"
+	if team_idx >= 0 and team_idx < team_data_store.size() and team_data_store[team_idx]:
+		team_name_str = team_data_store[team_idx].name
+	else:
+		team_name_str = "BLUE" if team_idx == 0 else "RED"
+		
+	var team_label = Label3D.new()
+	team_label.name = "JerseyName_Front"
+	team_label.text = team_name_str.to_upper()
+	team_label.font_size = 32
+	team_label.pixel_size = 0.004
+	team_label.position = Vector3(0, 0.95, 0.37) # Front is +Z
+	team_label.modulate = Color.WHITE
+	team_label.outline_modulate = Color.BLACK
+	team_label.outline_size = 12
+	team_label.no_depth_test = false
+	team_label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	player_node.add_child(team_label)
 		
 	if "team_logo" in player_node and player_node.team_logo != null:
 		var decal = Decal.new()

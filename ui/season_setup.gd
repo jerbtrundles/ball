@@ -30,18 +30,17 @@ var available_teams: Array = []
 var current_team_index: int = 0
 
 func _ready() -> void:
-	# Ensure there's a league available to pick from, even transiently generated
-	if LeagueManager.divisions.is_empty():
-		LeagueManager.generate_default_league()
-		
-	# Unflatten the generated league structure
-	for div in LeagueManager.divisions:
-		available_teams.append_array(div["teams"])
-		
-	# Find our current specific team visually to default to
-	current_team_index = available_teams.find(LeagueManager.player_team)
-	if current_team_index < 0:
-		current_team_index = 0
+	# Build preview stubs for ALL 36 possible team names so the player
+	# can choose any franchise identity before the real league is generated.
+	available_teams = LeagueManager.build_all_team_stubs()
+	
+	# Default to the index of whatever was previously the player_team name, if any
+	var prev_name = LeagueManager.player_team.name if LeagueManager.player_team else ""
+	current_team_index = 0
+	for i in range(available_teams.size()):
+		if available_teams[i].name == prev_name:
+			current_team_index = i
+			break
 		
 	# Quarter Options
 	opt_quarters.add_item("15 Seconds", 15)
@@ -56,7 +55,26 @@ func _ready() -> void:
 	opt_team_size.add_item("5v5", 5)
 	opt_team_size.select(0)
 	
-	# Dynamically insert Games Per Opponent
+	# Dynamically insert League Size
+	var h_lsize = HBoxContainer.new()
+	h_lsize.alignment = BoxContainer.ALIGNMENT_CENTER
+	var lslbl = Label.new()
+	lslbl.custom_minimum_size = Vector2(180, 0)
+	lslbl.text = "Teams per League"
+	lslbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	lslbl.add_theme_font_size_override("font_size", 18)
+	var opt_lsize = OptionButton.new()
+	opt_lsize.name = "OptLeagueSize"
+	opt_lsize.custom_minimum_size = Vector2(220, 0)
+	for n in range(4, 13):
+		opt_lsize.add_item("%d Teams" % n, n)
+	opt_lsize.select(4) # Default 8 Teams (index 4 in 4..12)
+	h_lsize.add_child(lslbl)
+	h_lsize.add_child(opt_lsize)
+	$MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.add_child(h_lsize)
+	$MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.move_child(h_lsize, 2)
+	
+	# Dynamically insert Season Length
 	var h_gpo = HBoxContainer.new()
 	h_gpo.alignment = BoxContainer.ALIGNMENT_CENTER
 	var lbl = Label.new()
@@ -67,15 +85,13 @@ func _ready() -> void:
 	var opt_gpo = OptionButton.new()
 	opt_gpo.name = "OptGPO"
 	opt_gpo.custom_minimum_size = Vector2(220, 0)
-	opt_gpo.add_item("11 Games (1x)", 1)
-	opt_gpo.add_item("22 Games (2x)", 2)
-	opt_gpo.add_item("33 Games (3x)", 3)
-	opt_gpo.add_item("44 Games (4x)", 4)
-	opt_gpo.select(0)
 	h_gpo.add_child(lbl)
 	h_gpo.add_child(opt_gpo)
 	$MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.add_child(h_gpo)
-	$MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.move_child(h_gpo, 2)
+	$MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.move_child(h_gpo, 3)
+	
+	opt_lsize.item_selected.connect(func(_idx): _update_season_length_options())
+	_update_season_length_options()
 	
 	# Connect interaction
 	btn_start.pressed.connect(_on_start_pressed)
@@ -83,6 +99,27 @@ func _ready() -> void:
 	btn_up.pressed.connect(func(): _cycle_team(-1))
 	btn_down.pressed.connect(func(): _cycle_team(1))
 	opt_team_size.item_selected.connect(func(_idx): _update_ui())
+	
+	# Info Panel explaining bottom league & promo/relegation
+	var info_pnl = PanelContainer.new()
+	var i_sb = StyleBoxFlat.new()
+	i_sb.bg_color = Color(0.1, 0.1, 0.15, 0.7)
+	i_sb.border_color = Color(0.0, 0.9, 1.0, 0.4)
+	i_sb.set_border_width_all(1)
+	i_sb.set_corner_radius_all(6)
+	i_sb.content_margin_left = 15; i_sb.content_margin_right = 15
+	i_sb.content_margin_top = 10; i_sb.content_margin_bottom = 10
+	info_pnl.add_theme_stylebox_override("panel", i_sb)
+	$MainHBox/VBoxContainer.add_child(info_pnl)
+	$MainHBox/VBoxContainer.move_child(info_pnl, $MainHBox/VBoxContainer.get_child_count() - 3) # Above Start Button
+	
+	var info_lbl = Label.new()
+	info_lbl.text = "You are starting a new franchise in the Bronze Tier (Lowest League).\nCompete well and win the post-season tournament to get PROMOTED to the Silver Tier!\nBe careful, finishing last means you could be RELEGATED to a lower division."
+	info_lbl.add_theme_font_size_override("font_size", 13)
+	info_lbl.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9))
+	info_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	info_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	info_pnl.add_child(info_lbl)
 	
 	# Items Modal Binding
 	btn_items.pressed.connect(_open_items_modal)
@@ -203,10 +240,26 @@ func _update_ui() -> void:
 		var header_hbox = HBoxContainer.new()
 		pvbox.add_child(header_hbox)
 		
-		var name_lbl = Label.new()
-		name_lbl.text = " #%d %s" % [(i+1)*11, p.name] # Dummy numbers for now
+		var num_lbl = Label.new()
+		num_lbl.text = "#%d " % p.number
+		num_lbl.add_theme_font_size_override("font_size", 18)
+		num_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+		header_hbox.add_child(num_lbl)
+		
+		var name_lbl = LineEdit.new()
+		name_lbl.text = p.name
+		name_lbl.placeholder_text = "Player Name"
+		name_lbl.max_length = 20
 		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_lbl.add_theme_font_size_override("font_size", 18)
+		var sb_line_n = StyleBoxEmpty.new()
+		var sb_line_f = StyleBoxFlat.new()
+		sb_line_f.bg_color = Color(0.1, 0.1, 0.15, 0.8)
+		sb_line_f.border_color = t.color_primary
+		sb_line_f.set_border_width_all(1)
+		name_lbl.add_theme_stylebox_override("normal", sb_line_n)
+		name_lbl.add_theme_stylebox_override("focus", sb_line_f)
+		name_lbl.text_changed.connect(func(new_text): p.name = new_text)
 		header_hbox.add_child(name_lbl)
 		
 		var ovr_lbl = Label.new()
@@ -215,67 +268,113 @@ func _update_ui() -> void:
 		ovr_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
 		header_hbox.add_child(ovr_lbl)
 		
+		var stat_panel = PanelContainer.new()
+		var stat_bg = StyleBoxFlat.new()
+		stat_bg.bg_color = Color(0.08, 0.08, 0.12, 0.7)
+		stat_bg.border_color = t.color_primary.darkened(0.4)
+		stat_bg.set_border_width_all(1)
+		stat_bg.set_corner_radius_all(6)
+		stat_bg.set_content_margin_all(8)
+		stat_panel.add_theme_stylebox_override("panel", stat_bg)
+		pvbox.add_child(stat_panel)
+
 		var stat_grid = GridContainer.new()
-		stat_grid.columns = 6
+		stat_grid.columns = 2
 		stat_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		stat_grid.add_theme_constant_override("h_separation", 15)
-		pvbox.add_child(stat_grid)
+		stat_grid.add_theme_constant_override("h_separation", 20)
+		stat_grid.add_theme_constant_override("v_separation", 6)
+		stat_panel.add_child(stat_grid)
 		
 		var stats_keys = ["speed", "shot", "pass_skill", "tackle", "strength", "aggression"]
-		var stats_labels = ["SPD", "SHT", "PAS", "TCK", "STR", "AGG"]
+		var stats_labels = ["Speed", "Shooting", "Passing", "Tackling", "Strength", "Aggression"]
 		
 		for j in range(6):
-			var s_val = p.get(stats_keys[j])
+			var s_val = float(p.get(stats_keys[j]))
+			
 			var s_vbox = VBoxContainer.new()
 			s_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			s_vbox.add_theme_constant_override("separation", 0)
+			s_vbox.add_theme_constant_override("separation", 2)
 			
 			var s_lbl = Label.new()
 			s_lbl.text = stats_labels[j]
-			s_lbl.add_theme_font_size_override("font_size", 11)
+			s_lbl.add_theme_font_size_override("font_size", 12)
 			s_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
-			s_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			s_vbox.add_child(s_lbl)
+			
+			var bar_hbox = HBoxContainer.new()
+			bar_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			s_vbox.add_child(bar_hbox)
+			
+			var bar = ProgressBar.new()
+			bar.min_value = 0
+			bar.max_value = 100
+			bar.value = s_val
+			bar.show_percentage = false
+			bar.custom_minimum_size = Vector2(0, 10)
+			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			
+			var sb_bar_bg = StyleBoxFlat.new()
+			sb_bar_bg.bg_color = Color(0.05, 0.05, 0.05, 0.8)
+			sb_bar_bg.set_corner_radius_all(3)
+			bar.add_theme_stylebox_override("background", sb_bar_bg)
+			
+			var c = Color.WHITE
+			if s_val <= 50.0:
+				var pt = s_val / 50.0
+				c = Color(0.2, 0.1, 0.4).lerp(Color(0.1, 0.5, 0.9), pt)
+			else:
+				var pt = (s_val - 50.0) / 50.0
+				c = Color(0.1, 0.5, 0.9).lerp(Color(0.5, 1.0, 1.0), pt)
+					
+			var sb_fill = StyleBoxFlat.new()
+			sb_fill.bg_color = c
+			sb_fill.set_corner_radius_all(3)
+			bar.add_theme_stylebox_override("fill", sb_fill)
+			bar_hbox.add_child(bar)
 			
 			var v_lbl = Label.new()
 			v_lbl.text = str(int(s_val))
-			v_lbl.add_theme_font_size_override("font_size", 14)
-			
-			var c = Color.WHITE
-			if s_val >= 80: c = Color.GREEN_YELLOW
-			elif s_val >= 50: c = Color.WHITE
-			else: c = Color(1.0, 0.5, 0.5)
-			
+			v_lbl.custom_minimum_size = Vector2(22, 0)
+			v_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			v_lbl.add_theme_font_size_override("font_size", 12)
 			v_lbl.add_theme_color_override("font_color", c)
-			v_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			s_vbox.add_child(v_lbl)
+			bar_hbox.add_child(v_lbl)
 			
 			stat_grid.add_child(s_vbox)
 		
-		if not LeagueManager.custom_players.is_empty():
-			var btn_swap = Button.new()
-			btn_swap.text = "SWAP WITH CUSTOM"
-			btn_swap.custom_minimum_size = Vector2(0, 30)
-			btn_swap.add_theme_font_size_override("font_size", 12)
-			btn_swap.add_theme_color_override("font_color", Color(0.3, 0.9, 0.3, 0.8))
-			var click_idx = i # Ensure local capture
-			btn_swap.pressed.connect(func(): _on_roster_card_clicked(click_idx))
-			pvbox.add_child(btn_swap)
+		var actions_hbox = HBoxContainer.new()
+		actions_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		actions_hbox.add_theme_constant_override("separation", 15)
+		pvbox.add_child(actions_hbox)
+		
+		var btn_rand = Button.new()
+		btn_rand.text = " 🎲 New Player "
+		btn_rand.custom_minimum_size = Vector2(40, 40)
+		btn_rand.add_theme_font_size_override("font_size", 14)
+		var rand_click_idx = i
+		btn_rand.pressed.connect(func(): _on_roster_card_randomize(rand_click_idx))
+		actions_hbox.add_child(btn_rand)
+		
+		# Swap button removed
 		
 		roster_list.add_child(pnl)
 
-func _on_roster_card_clicked(idx: int) -> void:
-	if LeagueManager.custom_players.is_empty():
-		return # No custom players available to swap
-		
-	var m_scene = load("res://ui/player_swap_modal.tscn")
-	var m_inst = m_scene.instantiate()
-	m_inst.player_selected.connect(func(p: PlayerData):
-		var t = available_teams[current_team_index]
-		t.roster[idx] = p
-		_update_ui()
-	)
-	add_child(m_inst)
+func _on_roster_card_randomize(idx: int) -> void:
+	var t = available_teams[current_team_index]
+	var first_names = ["John", "Alex", "Chris", "Sam", "Pat", "Mike", "David", "James", "Robert", "William", "Joseph", "Thomas", "Charles", "Daniel", "Matthew", "Anthony", "Mark", "Steven", "Paul", "Andrew", "Kevin", "Brian", "George", "Edward", "Ronald", "Timothy", "Jason", "Jeffrey", "Ryan", "Jacob"]
+	var last_names = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson", "White", "Harris", "Sanchez", "Clark"]
+	var p_name = first_names[randi() % first_names.size()] + " " + last_names[randi() % last_names.size()]
+	
+	var PlayerDataScript = load("res://scripts/data/player_data.gd")
+	var p = PlayerDataScript.new(p_name, 100 * 1) # Tier 1 (Bronze)
+	p.number = randi_range(0, 99)
+	p.randomize_with_archetype(1) # Tier 1
+	
+	t.roster[idx] = p
+	_update_ui()
+
+# Swap modal logic removed
 
 func _show_player_card(player: Resource, theme_color: Color) -> void:
 	var m_scene = load("res://ui/player_card_modal.tscn")
@@ -325,6 +424,28 @@ func _update_items_button_text() -> void:
 	elif enabled_count == 0: btn_items.text = "All Disabled ▸"
 	else: btn_items.text = "%d / %d Enabled ▸" % [enabled_count, items.size()]
 
+func _update_season_length_options() -> void:
+	var opt_gpo = $MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.find_child("OptGPO", true, false) as OptionButton
+	if not opt_gpo: return
+	
+	var opt_lsize = $MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.find_child("OptLeagueSize", true, false) as OptionButton
+	var league_size = 8
+	if opt_lsize and opt_lsize.get_selected_id() > 0:
+		league_size = opt_lsize.get_selected_id()
+		
+	# league_size = teams per division; games_per_cycle = round-robin = league_size - 1
+	var games_per_cycle = league_size - 1
+	var current_selected = opt_gpo.get_selected_id()
+	if current_selected <= 0: current_selected = 1
+	
+	opt_gpo.clear()
+	opt_gpo.add_item("%d Games (1x)" % (games_per_cycle * 1), 1)
+	opt_gpo.add_item("%d Games (2x)" % (games_per_cycle * 2), 2)
+	opt_gpo.add_item("%d Games (3x)" % (games_per_cycle * 3), 3)
+	opt_gpo.add_item("%d Games (4x)" % (games_per_cycle * 4), 4)
+	
+	opt_gpo.select(clamp(current_selected - 1, 0, 3))
+
 func _on_start_pressed() -> void:
 	var t = available_teams[current_team_index]
 	
@@ -342,12 +463,20 @@ func _on_start_pressed() -> void:
 	var gpo = 1
 	if opt_gpo: gpo = opt_gpo.get_selected_id()
 	
+	var opt_lsize = $MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.find_child("OptLeagueSize", true, false) as OptionButton
+	var l_size = 8
+	if opt_lsize and opt_lsize.get_selected_id() > 0: l_size = opt_lsize.get_selected_id()
+	
+	# l_size = teams per division; chosen name ensures the player's pick lands in Bronze
+	LeagueManager.generate_default_league(l_size, t.name)
+	
 	var config = {
 		"quarter_duration": float(q_len),
 		"team_size": int(t_size),
 		"items_enabled": any_items,
-		"enabled_items": enabled_items,
-		"games_per_opponent": gpo
+		"allowed_items": enabled_items,
+		"games_per_opponent": int(gpo),
+		"league_size": int(l_size)
 	}
 	
 	LeagueManager.start_new_season(t, config)

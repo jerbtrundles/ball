@@ -40,13 +40,12 @@ func _ready() -> void:
 	# Connect buttons
 	var btn_quick = vbox.get_node("BtnQuickMatch")
 	var btn_season = vbox.get_node("BtnNewSeason")
-	var btn_create = vbox.get_node("BtnCreatePlayer")
 	var btn_debug = vbox.get_node("BtnDebugGame")
 	var btn_quit = vbox.get_node("BtnQuit")
 	
 	if LeagueManager.has_saved_season():
 		var btn_resume = btn_season.duplicate()
-		btn_resume.text = "LOAD SEASON"
+		btn_resume.text = "LOAD FRANCHISE"
 		btn_resume.name = "BtnLoadSeason"
 		vbox.add_child(btn_resume)
 		vbox.move_child(btn_resume, btn_season.get_index())
@@ -54,7 +53,6 @@ func _ready() -> void:
 		
 	btn_quick.pressed.connect(_on_quick_match_pressed)
 	btn_season.pressed.connect(_on_new_season_pressed)
-	btn_create.pressed.connect(_on_create_pressed)
 	btn_debug.pressed.connect(_on_debug_pressed)
 	btn_quit.pressed.connect(_on_quit_pressed)
 	
@@ -73,17 +71,8 @@ func _on_load_season_pressed() -> void:
 	add_child(picker)
 
 func _on_new_season_pressed() -> void:
-	print("Starting New Season Setup...")
+	print("Starting Franchise Setup...")
 	get_tree().change_scene_to_file("res://ui/season_setup.tscn")
-
-func _on_create_pressed() -> void:
-	var c_scene = load("res://ui/custom_player_creator.tscn")
-	var c_inst = c_scene.instantiate()
-	c_inst.player_created.connect(func(p: PlayerData):
-		LeagueManager.custom_players.append(p)
-		LeagueManager.save_global_players()
-	)
-	add_child(c_inst)
 
 func _on_quit_pressed() -> void:
 	get_tree().quit()

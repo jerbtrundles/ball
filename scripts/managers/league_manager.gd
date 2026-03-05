@@ -19,8 +19,6 @@ var is_postseason: bool = false
 var playoff_schedule: Array = []
 var season_config: Dictionary = {}
 
-var custom_players: Array = []
-
 # Pending match data for GameManager handshake
 var pending_match_data: Dictionary = {}
 
@@ -29,7 +27,12 @@ const TEAM_NAMES = [
 	"Cobras", "Vipers", "Raptors", "Sharks", 
 	"Bulls", "Rhinos", "Tigers", "Lions",
 	"Hawks", "Eagles", "Falcons", "Ravens",
-	"Titans", "Giants", "Spartans", "Vikings"
+	"Titans", "Giants", "Spartans", "Vikings",
+	"Panthers", "Bears", "Wolves", "Gators",
+	"Dragons", "Griffins", "Stallions", "Mustangs",
+	"Wildcats", "Cougars", "Jaguars", "Leopards",
+	"Pumas", "Hornets", "Wasps", "Stingers",
+	"Pythons", "Scorpions", "Hounds", "Grizzlies"
 ]
 
 const FIRST_NAMES = [
@@ -56,75 +59,66 @@ const LAST_NAMES = [
 func _ready():
 	randomize()
 	# generate_default_league() # Call manually or from main menu
-	load_global_players()
 
-func save_global_players() -> void:
-	var file = FileAccess.open("user://custom_players.json", FileAccess.WRITE)
-	if not file: return
-	
-	var arr = []
-	for cp in custom_players:
-		arr.append({
-			"name": cp.name,
-			"number": cp.number,
-			"speed": cp.speed,
-			"shot": cp.shot,
-			"pass_skill": cp.pass_skill,
-			"tackle": cp.tackle,
-			"strength": cp.strength,
-			"aggression": cp.aggression
-		})
-	file.store_string(JSON.stringify(arr))
-	file.close()
+# Build a lightweight stub for every possible team name so the setup screen
+# can show all 36 options before the real league is generated.
+func build_all_team_stubs() -> Array:
+	var stubs: Array = []
+	for idx in range(TEAM_NAMES.size()):
+		var t_name = TEAM_NAMES[idx]
+		var hue = float(idx) / float(TEAM_NAMES.size())
+		var color = Color.from_hsv(hue, 0.7, 0.85)
+		var team = TeamDataScript.new(t_name, color)
+		_generate_team_logo(team, t_name, color)
+		# Add a minimal bronze-tier roster so the OVR display works
+		for k in range(5):
+			var f_name = FIRST_NAMES[randi() % FIRST_NAMES.size()]
+			var l_name = LAST_NAMES[randi() % LAST_NAMES.size()]
+			var p = PlayerDataScript.new("%s %s" % [f_name, l_name], 100)
+			p.number = randi_range(0, 99)
+			p.randomize_stats(1)
+			team.add_player(p)
+		stubs.append(team)
+	return stubs
 
-func load_global_players() -> void:
-	custom_players.clear()
-	if not FileAccess.file_exists("user://custom_players.json"): return
-	
-	var file = FileAccess.open("user://custom_players.json", FileAccess.READ)
-	if not file: return
-	
-	var json = JSON.new()
-	if json.parse(file.get_as_text()) == OK:
-		var arr = json.data
-		if typeof(arr) == TYPE_ARRAY:
-			for raw_cp in arr:
-				var cp = PlayerDataScript.new(raw_cp.get("name", "Custom Player"))
-				cp.number = raw_cp.get("number", 0)
-				cp.speed = raw_cp.get("speed", 50.0)
-				cp.shot = raw_cp.get("shot", 50.0)
-				cp.pass_skill = raw_cp.get("pass_skill", 50.0)
-				cp.tackle = raw_cp.get("tackle", 50.0)
-				cp.strength = raw_cp.get("strength", 50.0)
-				cp.aggression = raw_cp.get("aggression", 50.0)
-				custom_players.append(cp)
-	file.close()
-
-func generate_default_league():
+func generate_default_league(teams_per_division: int = 8, chosen_team_name: String = ""):
 	divisions = []
 	current_season = 1
-	var used_names = []
+	var used_names: Array = []
+	
+	# Build a shuffled pool of all available names
+	var name_pool: Array = TEAM_NAMES.duplicate()
+	name_pool.shuffle()
+	
+	# If the player chose a specific team, move it to the front of the pool
+	# so it lands as the first team in the Bronze division.
+	if chosen_team_name != "" and name_pool.has(chosen_team_name):
+		name_pool.erase(chosen_team_name)
+		name_pool.push_front(chosen_team_name)
 	
 	# Create 3 Divisions: Bronze, Silver, Gold
-	# 4 Teams per division for simplicity initially
 	var division_names = ["Bronze", "Silver", "Gold"]
 	
 	for i in range(division_names.size()):
 		var div_name = division_names[i]
 		var teams_in_div: Array[Resource] = []
 		
-		for j in range(4):
-			var t_name = _get_unique_name(used_names)
+		for j in range(teams_per_division):
+			# Pop next unique name from the shuffled pool
+			var t_name: String
+			if name_pool.size() > 0:
+				t_name = name_pool.pop_front()
+			else:
+				t_name = "Team %d" % (used_names.size() + 1)
 			used_names.append(t_name)
 			
 			# Generate color based on division + index
-			var hue = float(j) / 4.0
-			var sat = 0.5 + (float(i) * 0.2) # Higher tier = more saturated?
+			var hue = float(j) / float(teams_per_division)
+			var sat = 0.5 + (float(i) * 0.2)
 			var val = 0.8
 			var color = Color.from_hsv(hue, sat, val)
 			
 			var team = TeamDataScript.new(t_name, color)
-			
 			_generate_team_logo(team, t_name, color)
 			
 			# Generate Roster (5 players)
@@ -133,8 +127,9 @@ func generate_default_league():
 				var l_name = LAST_NAMES[randi() % LAST_NAMES.size()]
 				var p_name = "%s %s" % [f_name, l_name]
 				
-				var p = PlayerDataScript.new(p_name, 100 * (i+1))
-				p.randomize_stats(i + 1) # Tier based on division
+				var p = PlayerDataScript.new(p_name, 100 * (i + 1))
+				p.number = randi_range(0, 99)
+				p.randomize_stats(i + 1)
 				team.add_player(p)
 			
 			teams_in_div.append(team)
@@ -161,6 +156,7 @@ func reset_team_roster(team: Resource) -> void:
 		var p_name = "%s %s" % [f_name, l_name]
 		
 		var p = PlayerDataScript.new(p_name, 100 * tier)
+		p.number = randi_range(0, 99)
 		p.randomize_stats(tier)
 		team.add_player(p)
 
@@ -178,52 +174,65 @@ func start_new_season(selected_team: Resource, config: Dictionary) -> void:
 
 func _generate_schedule() -> void:
 	schedule.clear()
-	var all_teams = []
-	for div in divisions:
-		all_teams.append_array(div["teams"])
-	
-	# Basic Round-Robin algorithm for N teams
-	if all_teams.size() % 2 != 0:
-		all_teams.append(null) # Dummy team for bye week if odd
-		
-	var num_teams = all_teams.size()
-	var num_weeks = num_teams - 1
-	var half_size = num_teams / 2
-	
-	var teams_copy = all_teams.duplicate()
-	teams_copy.remove_at(0) # Keep first team fixed
 	
 	var repeats = season_config.get("games_per_opponent", 1)
+	var max_weeks = 0
 	
-	for r in range(repeats):
-		for week in range(num_weeks):
-			var week_matches = []
+	# Generate a schedule per division separately
+	var division_schedules = []
+	for div in divisions:
+		var div_teams = div["teams"].duplicate()
+		if div_teams.size() % 2 != 0:
+			div_teams.append(null) # Dummy team for bye week if odd
 			
-			var t1 = all_teams[0]
-			var t2 = teams_copy[week % teams_copy.size()]
-			if t1 != null and t2 != null:
-				# Scramble Home/Away based on a mix of week and repeat index
-				if (week + r) % 2 == 0:
-					week_matches.append({"home": t1.name, "away": t2.name, "played": false, "home_score": 0, "away_score": 0})
-				else:
-					week_matches.append({"home": t2.name, "away": t1.name, "played": false, "home_score": 0, "away_score": 0})
-					
-			for i in range(1, half_size):
-				var first = (week + i) % teams_copy.size()
-				var second = (week + teams_copy.size() - i) % teams_copy.size()
-				t1 = teams_copy[first]
-				t2 = teams_copy[second]
+		var num_teams = div_teams.size()
+		var num_weeks = num_teams - 1
+		var half_size = num_teams / 2
+		
+		var teams_copy = div_teams.duplicate()
+		teams_copy.remove_at(0) # Keep first team fixed
+		
+		var div_sched = []
+		var div_name_tag = div["name"]
+		for r in range(repeats):
+			for week in range(num_weeks):
+				var week_matches = []
+				
+				var t1 = div_teams[0]
+				var t2 = teams_copy[week % teams_copy.size()]
 				if t1 != null and t2 != null:
-					# To ensure team 1/2 don't just constantly play home/away clumps,
-					# alternate based on the matchup index 'i' combined with 'week' and 'r'
-					if (i + week + r) % 2 == 0:
-						week_matches.append({"home": t1.name, "away": t2.name, "played": false, "home_score": 0, "away_score": 0})
+					# Scramble Home/Away based on a mix of week and repeat index
+					if (week + r) % 2 == 0:
+						week_matches.append({"home": t1.name, "away": t2.name, "played": false, "home_score": 0, "away_score": 0, "div": div_name_tag})
 					else:
-						week_matches.append({"home": t2.name, "away": t1.name, "played": false, "home_score": 0, "away_score": 0})
+						week_matches.append({"home": t2.name, "away": t1.name, "played": false, "home_score": 0, "away_score": 0, "div": div_name_tag})
 						
-			schedule.append(week_matches)
+				for i in range(1, half_size):
+					var first = (week + i) % teams_copy.size()
+					var second = (week + teams_copy.size() - i) % teams_copy.size()
+					t1 = teams_copy[first]
+					t2 = teams_copy[second]
+					if t1 != null and t2 != null:
+						if (i + week + r) % 2 == 0:
+							week_matches.append({"home": t1.name, "away": t2.name, "played": false, "home_score": 0, "away_score": 0, "div": div_name_tag})
+						else:
+							week_matches.append({"home": t2.name, "away": t1.name, "played": false, "home_score": 0, "away_score": 0, "div": div_name_tag})
+							
+				div_sched.append(week_matches)
+		
+		division_schedules.append(div_sched)
+		if div_sched.size() > max_weeks:
+			max_weeks = div_sched.size()
 			
-	print("Generated schedule for ", num_weeks * repeats, " weeks.")
+	# Merge division schedules week by week
+	for w in range(max_weeks):
+		var merged_week = []
+		for ds in division_schedules:
+			if w < ds.size():
+				merged_week.append_array(ds[w])
+		schedule.append(merged_week)
+		
+	print("Generated schedule for ", max_weeks, " weeks.")
 
 func _get_unique_name(used: Array) -> String:
 	for n in TEAM_NAMES:
@@ -272,11 +281,19 @@ func promote_relegate():
 	
 	# Apply moves
 	for m in moves:
-		m["from"]["teams"].erase(m["team"])
-		m["to"]["teams"].append(m["team"])
+		m["from"].erase(m["team"])
+		if not m["to"].has(m["team"]):
+			m["to"].append(m["team"])
 
 func _sort_division(div: Dictionary):
 	div["teams"].sort_custom(func(a, b): return a.wins > b.wins)
+
+func get_player_division_name() -> String:
+	if not player_team: return ""
+	for div in divisions:
+		if player_team in div["teams"]:
+			return div["name"]
+	return ""
 
 func get_next_opponent() -> Resource:
 	var active_schedule = playoff_schedule if is_postseason else schedule
@@ -378,35 +395,36 @@ func start_postseason() -> void:
 	current_week = 0
 	playoff_schedule.clear()
 	
-	var all_teams = []
-	for div in divisions:
-		all_teams.append_array(div["teams"])
-	all_teams.sort_custom(func(a, b): return a.wins > b.wins)
+	var sf_matches = []
+	var w2_matches = []
 	
-	var top8 = all_teams.slice(0, 8)
+	# Generate separate brackets per division
+	for d_idx in range(divisions.size()):
+		var div = divisions[d_idx]
+		var div_teams = div["teams"].duplicate()
+		div_teams.sort_custom(func(a, b): return a.wins > b.wins)
+		
+		# Take top 4 from each division
+		var top4 = div_teams.slice(0, min(4, div_teams.size()))
+		
+		if top4.size() >= 4:
+			# Week 1: Semifinals for this division
+			var match_idx_offset = sf_matches.size() # Match ID for next round tracking
+			
+			sf_matches.append({"home": top4[0].name, "away": top4[3].name, "played": false, "home_score": 0, "away_score": 0, "next_match": match_idx_offset / 2, "next_slot": "home", "division": div["name"]})
+			sf_matches.append({"home": top4[1].name, "away": top4[2].name, "played": false, "home_score": 0, "away_score": 0, "next_match": match_idx_offset / 2, "next_slot": "away", "division": div["name"]})
+			
+			# Week 2: Championship for this division
+			w2_matches.append({"home": "TBD", "away": "TBD", "played": false, "home_score": 0, "away_score": 0, "next_match": -1, "next_slot": "", "division": div["name"]})
+		elif top4.size() == 2:
+			# If a division only has 2 teams (rare edge case), skip directly to Championship
+			w2_matches.append({"home": top4[0].name, "away": top4[1].name, "played": false, "home_score": 0, "away_score": 0, "next_match": -1, "next_slot": "", "division": div["name"]})
 	
-	# Week 1: Quarterfinals
-	var qf_matches = [
-		{"home": top8[0].name, "away": top8[7].name, "played": false, "home_score": 0, "away_score": 0, "next_match": 0, "next_slot": "home"},
-		{"home": top8[3].name, "away": top8[4].name, "played": false, "home_score": 0, "away_score": 0, "next_match": 0, "next_slot": "away"},
-		{"home": top8[1].name, "away": top8[6].name, "played": false, "home_score": 0, "away_score": 0, "next_match": 1, "next_slot": "home"},
-		{"home": top8[2].name, "away": top8[5].name, "played": false, "home_score": 0, "away_score": 0, "next_match": 1, "next_slot": "away"}
-	]
-	playoff_schedule.append(qf_matches)
-	
-	# Week 2: Semifinals
-	var sf_matches = [
-		{"home": "TBD", "away": "TBD", "played": false, "home_score": 0, "away_score": 0, "next_match": 0, "next_slot": "home"},
-		{"home": "TBD", "away": "TBD", "played": false, "home_score": 0, "away_score": 0, "next_match": 0, "next_slot": "away"}
-	]
-	playoff_schedule.append(sf_matches)
-	
-	# Week 3: Championship
-	var champ_match = [
-		{"home": "TBD", "away": "TBD", "played": false, "home_score": 0, "away_score": 0, "next_match": -1, "next_slot": ""}
-	]
-	playoff_schedule.append(champ_match)
-	
+	if sf_matches.size() > 0:
+		playoff_schedule.append(sf_matches)
+	if w2_matches.size() > 0:
+		playoff_schedule.append(w2_matches)
+		
 	save_season()
 	
 func simulate_playoff_week() -> Dictionary:
@@ -973,26 +991,47 @@ func record_season_match_result(player_score: int, opponent_score: int, opponent
 		save_season()
 
 func get_champion_name() -> String:
-	if playoff_schedule.size() >= 3:
-		var m = playoff_schedule[2][0]
-		if m["played"]:
-			return m["home"] if m["home_score"] > m["away_score"] else m["away"]
+	# Get the championship for the player's division
+	var p_div = _get_division_of_team(player_team)
+	var d_name = p_div.get("name", "")
+	
+	if playoff_schedule.size() > 0: # Check the last week of playoffs
+		var final_week = playoff_schedule[playoff_schedule.size() - 1]
+		for m in final_week:
+			if m.get("division", "") == d_name:
+				if m["played"]:
+					return m["home"] if m["home_score"] > m["away_score"] else m["away"]
 	return ""
 
 func process_season_rollover(champion_name: String) -> void:
 	var moves = []
 	
-	# Relegate lowest in each league
+	# Relegate the lowest team in each division (excluding lowest div)
 	for i in range(1, divisions.size()):
 		var div = divisions[i]
 		if div["teams"].size() > 0:
 			var div_teams = div["teams"].duplicate()
 			div_teams.sort_custom(func(a, b): return a.wins > b.wins)
 			var lowest = div_teams[-1]
-			if lowest.name != champion_name:
-				moves.append({"team": lowest, "from": div["teams"], "to": divisions[i-1]["teams"]})
-				
-	# Promote champion
+			moves.append({"team": lowest, "from": div["teams"], "to": divisions[i-1]["teams"]})
+			
+	# Promote the champion of each division (excluding top div)
+	for i in range(divisions.size() - 1):
+		var div_name = divisions[i]["name"]
+		var div_champ_name = ""
+		
+		# Find the winner of this division's championship match
+		if playoff_schedule.size() > 0:
+			var final_week = playoff_schedule[playoff_schedule.size() - 1]
+			for m in final_week:
+				if m.get("division", "") == div_name and m["played"]:
+					div_champ_name = m["home"] if m["home_score"] > m["away_score"] else m["away"]
+					break
+					
+		if div_champ_name != "":
+			var champ_team = _get_team_by_name(div_champ_name)
+			if champ_team:
+				moves.append({"team": champ_team, "from": divisions[i]["teams"], "to": divisions[i+1]["teams"]})
 	var champ = _get_team_by_name(champion_name)
 	var champ_div_idx = -1
 	for i in range(divisions.size()):

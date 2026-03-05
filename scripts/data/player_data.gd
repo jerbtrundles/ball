@@ -36,3 +36,40 @@ func randomize_stats(tier: int = 1):
 	tackle = clampf(round(randfn(base, 15.0)), 10.0, 99.0)
 	strength = clampf(round(randfn(base, 15.0)), 10.0, 99.0)
 	aggression = clampf(round(randfn(base, 15.0)), 10.0, 99.0)
+
+func randomize_with_archetype(tier: int = 1):
+	var base = float(tier) * 20.0 + 20.0
+	var archetypes = ["shooter", "passer", "rebounder", "balanced"]
+	var archetype = archetypes[randi() % archetypes.size()]
+	
+	var min_stat = 10.0
+	var max_stat = min(base + 25.0, 99.0)
+	var prim_base = min(base + 15.0, 99.0)
+	var sec_base = max(base - 10.0, 10.0)
+	
+	if archetype == "balanced":
+		randomize_stats(tier)
+	elif archetype == "shooter":
+		var is_great = randf() < 0.2
+		if is_great:
+			shot = clampf(round(randfn(prim_base + 15.0, 5.0)), prim_base, 99.0)
+			for k in ["speed", "pass_skill", "tackle", "strength", "aggression"]:
+				set(k, clampf(round(randfn(sec_base - 10.0, 10.0)), min_stat, max_stat))
+		else:
+			shot = clampf(round(randfn(prim_base, 5.0)), base, max_stat)
+			for k in ["speed", "pass_skill", "tackle", "strength", "aggression"]:
+				set(k, clampf(round(randfn(sec_base, 15.0)), min_stat, max_stat))
+	elif archetype == "passer":
+		pass_skill = clampf(round(randfn(prim_base, 5.0)), base, max_stat)
+		speed = clampf(round(randfn(prim_base, 5.0)), base, max_stat)
+		strength = clampf(round(randfn(sec_base, 10.0)), min_stat, max_stat)
+		aggression = clampf(round(randfn(sec_base, 10.0)), min_stat, max_stat)
+		shot = clampf(round(randfn(base, 15.0)), min_stat, max_stat)
+		tackle = clampf(round(randfn(base, 15.0)), min_stat, max_stat)
+	elif archetype == "rebounder":
+		strength = clampf(round(randfn(prim_base, 5.0)), base, max_stat)
+		aggression = clampf(round(randfn(prim_base, 5.0)), base, max_stat)
+		tackle = clampf(round(randfn(prim_base, 5.0)), base, max_stat)
+		shot = clampf(round(randfn(sec_base, 10.0)), min_stat, max_stat)
+		pass_skill = clampf(round(randfn(sec_base, 10.0)), min_stat, max_stat)
+		speed = clampf(round(randfn(sec_base, 10.0)), min_stat, max_stat)
