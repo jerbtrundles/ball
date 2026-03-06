@@ -10,6 +10,10 @@ var carousel_index: int = 0
 var carousel_slides: Array[Callable] = []
 var carousel_tabs: Array[Button] = []
 var carousel_content: PanelContainer = null
+var stats_division_index: int = -1 # Filter for stats leaders, -1 = Player's division
+var stats_view_type: String = "individual" # "individual" or "team"
+var stats_sort_field: String = "pts"
+var stats_sort_asc: bool = false
 
 func _process(delta: float) -> void:
 	if ticker_scroll_node and ticker_content:
@@ -100,7 +104,11 @@ func _build_ui() -> void:
 	var rec_lbl = Label.new()
 	rec_lbl.text = "RECORD: %d - %d  |  TEAM OVR: %d" % [team.wins, team.losses, ovr]
 	rec_lbl.add_theme_font_size_override("font_size", 28)
-	rec_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2)) # Gold
+	# Use secondary color for accent, fall back to gold if secondary isn't meaningful
+	var accent = team.color_secondary
+	if accent == Color.WHITE or accent == Color(0,0,0):
+		accent = Color(1.0, 0.85, 0.2)
+	rec_lbl.add_theme_color_override("font_color", accent)
 	left_vbox.add_child(rec_lbl)
 	
 	left_vbox.add_child(HSeparator.new())
@@ -123,16 +131,28 @@ func _build_ui() -> void:
 	
 	var scroll = ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	roster_vbox.add_child(scroll)
 	
 	var grid = GridContainer.new()
 	grid.columns = 1
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_theme_constant_override("v_separation", 10)
 	scroll.add_child(grid)
 	
-	for p in team.roster:
-		var p_pnl = _create_player_row(p)
+	var active_count = LeagueManager.season_config.get("team_size", team.roster.size())
+	for i in range(min(active_count, team.roster.size())):
+		var p = team.roster[i]
+		var p_pnl = _create_player_row(p, team)
+		var p_capture = p
+		var t_capture = team
+		p_pnl.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		p_pnl.gui_input.connect(func(event: InputEvent):
+			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+				_show_player_stat_modal(p_capture, t_capture)
+		)
 		grid.add_child(p_pnl)
+
 		
 	# --- CAROUSEL ---
 	var st_vbox = VBoxContainer.new()
@@ -147,20 +167,12 @@ func _build_ui() -> void:
 	var slide_configs = []
 	if LeagueManager.is_postseason:
 		slide_configs = [
-			{"name": "BRACKET", "func": _build_carousel_bracket},
-			{"name": "PTS", "func": func(): _build_carousel_stats("PTS", "pts")},
-			{"name": "REB", "func": func(): _build_carousel_stats("REB", "reb")},
-			{"name": "AST", "func": func(): _build_carousel_stats("AST", "ast")},
-			{"name": "BLK", "func": func(): _build_carousel_stats("BLK", "blk")}
+			{"name": "BRACKET", "func": _build_carousel_bracket}
 		]
 	else:
 		slide_configs = [
 			{"name": "STANDINGS", "func": _build_carousel_standings},
-			{"name": "CALENDAR", "func": _build_carousel_calendar},
-			{"name": "PTS", "func": func(): _build_carousel_stats("PTS", "pts")},
-			{"name": "REB", "func": func(): _build_carousel_stats("REB", "reb")},
-			{"name": "AST", "func": func(): _build_carousel_stats("AST", "ast")},
-			{"name": "BLK", "func": func(): _build_carousel_stats("BLK", "blk")}
+			{"name": "CALENDAR", "func": _build_carousel_calendar}
 		]
 	
 	carousel_slides.clear()
@@ -176,6 +188,9 @@ func _build_ui() -> void:
 		tab.pressed.connect(func(): _on_carousel_tab_pressed(tidx))
 		carousel_header.add_child(tab)
 		carousel_tabs.append(tab)
+	
+	# Clamp carousel_index in case the slide count changed (prevents silent crash on rebuild)
+	carousel_index = clampi(carousel_index, 0, carousel_slides.size() - 1)
 	
 	carousel_content = PanelContainer.new()
 	var msb = StyleBoxFlat.new()
@@ -274,6 +289,13 @@ func _build_ui() -> void:
 		elif LeagueManager.get_next_opponent() == null:
 			btn_sim.text = "SIMULATE ROUND"
 	right_vbox.add_child(btn_sim)
+	
+	# Season Stats Button
+	var btn_stats = Button.new()
+	btn_stats.text = "SEASON STATS"
+	_style_side_button(btn_stats)
+	btn_stats.pressed.connect(_on_season_stats_pressed)
+	right_vbox.add_child(btn_stats)
 	
 	pnl_actions_group = [] # Keep track of buttons to disable during loading/sims
 	pnl_actions_group.append(btn_play)
@@ -521,9 +543,26 @@ func _build_carousel_standings() -> void:
 	len_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	mini_vbox.add_child(len_lbl)
 	
-	# Division display order: Gold (top) → Silver → Bronze (bottom)
-	var div_display_order = LeagueManager.divisions.duplicate()
-	div_display_order.reverse() # Show highest tier first
+	# Find which division the player is in
+	var player_div_name = LeagueManager.get_player_division_name()
+	
+	# Build display order: player's division first, then others in Gold → Silver → Bronze order
+	var div_display_order: Array = []
+	var player_div = null
+	for div in LeagueManager.divisions:
+		if div["name"] == player_div_name:
+			player_div = div
+			break
+	if player_div:
+		div_display_order.append(player_div)
+	# Append remaining divisions in fixed tier order (skip player's own)
+	for tier_name in ["Gold", "Silver", "Bronze"]:
+		if tier_name == player_div_name:
+			continue
+		for div in LeagueManager.divisions:
+			if div["name"] == tier_name:
+				div_display_order.append(div)
+				break
 	
 	var div_header_colors = {
 		"Gold":   Color(1.0,  0.85, 0.1),
@@ -538,23 +577,38 @@ func _build_carousel_standings() -> void:
 		var div_icon = div_icons.get(div_name, "")
 		
 		# --- Division header ---
+		var is_player_div = (div_name == player_div_name)
 		var dh_pnl = PanelContainer.new()
 		var dh_sb  = StyleBoxFlat.new()
-		dh_sb.bg_color    = Color(div_col.r * 0.15, div_col.g * 0.15, div_col.b * 0.15, 0.9)
+		var dh_bg_mul = 0.25 if is_player_div else 0.15
+		dh_sb.bg_color    = Color(div_col.r * dh_bg_mul, div_col.g * dh_bg_mul, div_col.b * dh_bg_mul, 0.95)
 		dh_sb.border_color = div_col
-		dh_sb.set_border_width(SIDE_LEFT, 4)
+		dh_sb.set_border_width(SIDE_LEFT, 6 if is_player_div else 4)
 		dh_sb.set_border_width(SIDE_BOTTOM, 1)
 		dh_sb.set_corner_radius_all(4)
 		dh_sb.content_margin_left = 12; dh_sb.content_margin_right = 12
-		dh_sb.content_margin_top  = 6;  dh_sb.content_margin_bottom = 6
+		dh_sb.content_margin_top  = 8 if is_player_div else 6
+		dh_sb.content_margin_bottom = 8 if is_player_div else 6
 		dh_pnl.add_theme_stylebox_override("panel", dh_sb)
 		mini_vbox.add_child(dh_pnl)
 		
+		var dh_hb = HBoxContainer.new()
+		dh_pnl.add_child(dh_hb)
+		
 		var dh_lbl = Label.new()
 		dh_lbl.text = "%s %s DIVISION" % [div_icon, div_name.to_upper()]
-		dh_lbl.add_theme_font_size_override("font_size", 16)
+		dh_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		dh_lbl.add_theme_font_size_override("font_size", 18 if is_player_div else 16)
 		dh_lbl.add_theme_color_override("font_color", div_col)
-		dh_pnl.add_child(dh_lbl)
+		dh_hb.add_child(dh_lbl)
+		
+		if is_player_div:
+			var you_lbl = Label.new()
+			you_lbl.text = "◀ YOUR DIVISION"
+			you_lbl.add_theme_font_size_override("font_size", 13)
+			you_lbl.add_theme_color_override("font_color", div_col.lightened(0.3))
+			you_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			dh_hb.add_child(you_lbl)
 		
 		# Column headers
 		var head_hb = HBoxContainer.new()
@@ -589,9 +643,10 @@ func _build_carousel_standings() -> void:
 			var r_sb   = StyleBoxFlat.new()
 			r_sb.bg_color = Color(0.12, 0.12, 0.18, 0.9) if i % 2 == 0 else Color(0.15, 0.15, 0.22, 0.9)
 			if is_player:
-				r_sb.bg_color    = Color(0.2,  0.3,  0.4,  0.9)
-				r_sb.border_color = Color(0.0,  0.9,  1.0,  0.6)
-				r_sb.set_border_width_all(1)
+				r_sb.bg_color    = Color(0.05, 0.20, 0.30, 0.95)
+				r_sb.border_color = Color(0.0,  0.9,  1.0,  0.9)
+				r_sb.set_border_width_all(2)
+				r_sb.set_border_width(SIDE_LEFT, 5)
 			elif is_promo:
 				r_sb.border_color = Color(0.2, 0.9, 0.2, 0.5)
 				r_sb.set_border_width(SIDE_LEFT, 3)
@@ -600,7 +655,8 @@ func _build_carousel_standings() -> void:
 				r_sb.set_border_width(SIDE_LEFT, 3)
 			r_sb.set_corner_radius_all(4)
 			r_sb.content_margin_left = 12; r_sb.content_margin_right = 12
-			r_sb.content_margin_top  = 7;  r_sb.content_margin_bottom = 7
+			r_sb.content_margin_top  = 10 if is_player else 7
+			r_sb.content_margin_bottom = 10 if is_player else 7
 			row_bg.add_theme_stylebox_override("panel", r_sb)
 			
 			var hb = HBoxContainer.new()
@@ -610,14 +666,17 @@ func _build_carousel_standings() -> void:
 			var rank = Label.new()
 			rank.text = str(i + 1) + "."
 			rank.custom_minimum_size = Vector2(30, 0)
-			rank.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+			rank.add_theme_color_override("font_color", Color(0.0, 0.85, 1.0) if is_player else Color(0.6, 0.6, 0.7))
+			rank.add_theme_font_size_override("font_size", 16 if is_player else 14)
 			hb.add_child(rank)
 			
 			var nam = Label.new()
 			nam.text = t.name
 			nam.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			nam.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-			if is_player: nam.add_theme_color_override("font_color", Color(0.0, 0.9, 1.0))
+			if is_player:
+				nam.add_theme_color_override("font_color", Color(0.0, 0.95, 1.0))
+				nam.add_theme_font_size_override("font_size", 16)
 			if is_promo:  nam.add_theme_color_override("font_color", Color(0.4, 1.0, 0.4))
 			if is_relgt:  nam.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
 			hb.add_child(nam)
@@ -682,72 +741,342 @@ func _build_carousel_standings() -> void:
 			
 			mini_vbox.add_child(row_bg)
 
-func _build_carousel_stats(stat_suffix: String, stat_field: String) -> void:
+func _show_season_stats_modal() -> void:
+	if stats_division_index == -1:
+		var p_div_name = LeagueManager.get_player_division_name()
+		for i in range(LeagueManager.divisions.size()):
+			if LeagueManager.divisions[i]["name"] == p_div_name:
+				stats_division_index = i
+				break
+		if stats_division_index == -1: stats_division_index = 0
+
+	var vbox = _build_generic_modal("LEAGUE STATISTICS", 1100, 650)
 	
-	var scroller = ScrollContainer.new()
-	scroller.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-	carousel_content.add_child(scroller)
+	# Create a container for the ENTIRE modal content so we can refresh buttons too
+	var modal_content = VBoxContainer.new()
+	modal_content.name = "ModalContent"
+	modal_content.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	modal_content.add_theme_constant_override("separation", 15)
+	vbox.add_child(modal_content)
 	
-	var mini_vbox = VBoxContainer.new()
-	mini_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mini_vbox.add_theme_constant_override("separation", 6)
-	scroller.add_child(mini_vbox)
+	_build_stats_modal_content(modal_content)
+
+func _build_stats_modal_content(container: VBoxContainer) -> void:
+	# 1. Toolbar: Division Switcher + View Type Toggle
+	var toolbar = HBoxContainer.new()
+	toolbar.alignment = BoxContainer.ALIGNMENT_CENTER
+	toolbar.add_theme_constant_override("separation", 30)
+	container.add_child(toolbar)
 	
-	var all_players = []
-	for div in LeagueManager.divisions:
+	# -- Division Buttons --
+	var div_hb = HBoxContainer.new()
+	div_hb.add_theme_constant_override("separation", 10)
+	toolbar.add_child(div_hb)
+	for i in range(LeagueManager.divisions.size()):
+		var div_name = LeagueManager.divisions[i]["name"]
+		var btn = Button.new()
+		btn.text = div_name.to_upper()
+		btn.add_theme_font_size_override("font_size", 14)
+		var active = (i == stats_division_index)
+		var sb = StyleBoxFlat.new()
+		sb.bg_color = Color(0.2, 0.4, 0.8, 0.5) if active else Color(0.1, 0.1, 0.15, 0.6)
+		sb.border_color = Color(0.0, 0.9, 1.0, 0.8) if active else Color(0.3, 0.3, 0.4, 0.5)
+		sb.set_border_width_all(1)
+		sb.set_corner_radius_all(4)
+		sb.content_margin_left = 12; sb.content_margin_right = 12
+		btn.add_theme_stylebox_override("normal", sb)
+		btn.add_theme_color_override("font_color", Color.WHITE if active else Color(0.6, 0.6, 0.7))
+		var idx = i
+		btn.pressed.connect(func():
+			stats_division_index = idx
+			_refresh_stats_modal(container.get_parent())
+		)
+		div_hb.add_child(btn)
+		
+	# -- View Type Toggle --
+	var view_hb = HBoxContainer.new()
+	view_hb.add_theme_constant_override("separation", 10)
+	toolbar.add_child(view_hb)
+	for vt in ["individual", "team"]:
+		var btn = Button.new()
+		btn.text = vt.to_upper()
+		btn.add_theme_font_size_override("font_size", 14)
+		var active = (stats_view_type == vt)
+		var sb = StyleBoxFlat.new()
+		sb.bg_color = Color(0.2, 0.6, 0.4, 0.5) if active else Color(0.1, 0.1, 0.15, 0.6)
+		sb.border_color = Color(0.4, 1.0, 0.6, 0.8) if active else Color(0.3, 0.3, 0.4, 0.5)
+		sb.set_border_width_all(1)
+		sb.set_corner_radius_all(4)
+		sb.content_margin_left = 12; sb.content_margin_right = 12
+		btn.add_theme_stylebox_override("normal", sb)
+		btn.add_theme_color_override("font_color", Color.WHITE if active else Color(0.6, 0.6, 0.7))
+		var type = vt
+		btn.pressed.connect(func():
+			stats_view_type = type
+			_refresh_stats_modal(container.get_parent())
+		)
+		view_hb.add_child(btn)
+
+	container.add_child(HSeparator.new())
+	
+	_show_season_stats_table(container)
+
+func _refresh_stats_modal(vbox: VBoxContainer) -> void:
+	# Clear the ModalContent and rebuild it (to update button states)
+	var content = vbox.get_node("ModalContent")
+	for c in content.get_children(): c.queue_free()
+	_build_stats_modal_content(content)
+
+func _show_season_stats_table(container: VBoxContainer) -> void:
+	var is_indiv = (stats_view_type == "individual")
+	
+	# 1. Header with styling
+	var head_panel = PanelContainer.new()
+	var hsb = StyleBoxFlat.new()
+	hsb.bg_color = Color(0.15, 0.18, 0.25, 0.9)
+	hsb.border_color = Color(0.3, 0.5, 0.8, 0.4)
+	hsb.set_border_width_all(1)
+	hsb.set_corner_radius_all(4)
+	hsb.content_margin_left = 10; hsb.content_margin_right = 10
+	head_panel.add_theme_stylebox_override("panel", hsb)
+	container.add_child(head_panel)
+	
+	var head_hbox = HBoxContainer.new()
+	head_hbox.add_theme_constant_override("separation", 8)
+	head_panel.add_child(head_hbox)
+	
+	var cols = ["RK", "NAME"]
+	if is_indiv: cols.append("TEAM")
+	cols.append_array(["PTS", "PPG", "REB", "RPG", "AST", "APG", "BLK", "BPG", "FGM", "FGA", "FG%", "3PM", "3PA", "3P%"])
+	
+	var fields = ["", "name"]
+	if is_indiv: fields.append("team_name")
+	fields.append_array(["pts", "ppg", "reb", "rpg", "ast", "apg", "blk", "bpg", "fgm", "fga", "fg_pct", "tpm", "tpa", "tp_pct"])
+	
+	var ws = [35, 160] # RK, NAME
+	if is_indiv: ws.append(100) # TEAM
+	ws.append_array([50, 50, 45, 50, 45, 50, 45, 50, 45, 45, 55, 45, 45, 55])
+	
+	for i in range(cols.size()):
+		# Add vertical separator before stats start
+		var stats_start_idx = 3 if is_indiv else 2
+		if i == stats_start_idx:
+			var sep = VSeparator.new()
+			sep.add_theme_constant_override("separation", 15)
+			head_hbox.add_child(sep)
+			
+		var btn = Button.new()
+		btn.text = cols[i]
+		btn.custom_minimum_size = Vector2(ws[i], 0)
+		btn.add_theme_font_size_override("font_size", 13)
+		btn.alignment = HORIZONTAL_ALIGNMENT_CENTER if i >= stats_start_idx else HORIZONTAL_ALIGNMENT_LEFT
+		if i == 1: btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		
+		btn.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+		btn.add_theme_stylebox_override("hover", StyleBoxEmpty.new())
+		btn.add_theme_stylebox_override("pressed", StyleBoxEmpty.new())
+		btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		
+		var f = fields[i]
+		if f != "":
+			btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+			if f == stats_sort_field:
+				btn.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+				btn.text += " " + ("↑" if stats_sort_asc else "↓")
+			else:
+				btn.add_theme_color_override("font_color", Color(0.6, 0.7, 0.8))
+			
+			btn.pressed.connect(func():
+				if stats_sort_field == f:
+					stats_sort_asc = !stats_sort_asc
+				else:
+					stats_sort_field = f
+					stats_sort_asc = false
+				_refresh_stats_modal(container.get_parent())
+			)
+		else:
+			btn.add_theme_color_override("font_color", Color(0.4, 0.4, 0.5))
+			btn.disabled = true
+			
+		head_hbox.add_child(btn)
+		
+	# 2. Data Gathering
+	var div = LeagueManager.divisions[stats_division_index]
+	var data_list = []
+	
+	if is_indiv:
 		for t in div["teams"]:
 			for p in t.roster:
-				all_players.append({"p": p, "t": t})
-				
-	all_players.sort_custom(func(a,b): return a["p"].get(stat_field) > b["p"].get(stat_field))
+				var gp = max(1, p.game_log.size())
+				var entry = {
+					"p": p, "t": t, "name": p.name, "team_name": t.name,
+					"pts": p.pts, "ppg": float(p.pts) / gp,
+					"reb": p.reb, "rpg": float(p.reb) / gp,
+					"ast": p.ast, "apg": float(p.ast) / gp,
+					"blk": p.blk, "bpg": float(p.blk) / gp,
+					"fgm": p.fgm, "fga": p.fga,
+					"fg_pct": float(p.fgm) / max(1.0, float(p.fga)),
+					"tpm": p.tpm, "tpa": p.tpa,
+					"tp_pct": float(p.tpm) / max(1.0, float(p.tpa))
+				}
+				data_list.append(entry)
+	else:
+		# Team Aggregation
+		for t in div["teams"]:
+			var t_pts = 0; var t_reb = 0; var t_ast = 0; var t_blk = 0
+			var t_fgm = 0; var t_fga = 0; var t_tpm = 0; var t_tpa = 0
+			var t_gp = 0
+			for p in t.roster:
+				t_pts += p.pts; t_reb += p.reb; t_ast += p.ast; t_blk += p.blk
+				t_fgm += p.fgm; t_fga += p.fga; t_tpm += p.tpm; t_tpa += p.tpa
+				t_gp = max(t_gp, p.game_log.size())
+			
+			t_gp = max(1, t_gp)
+			var entry = {
+				"t": t, "name": t.name,
+				"pts": t_pts, "ppg": float(t_pts) / t_gp,
+				"reb": t_reb, "rpg": float(t_reb) / t_gp,
+				"ast": t_ast, "apg": float(t_ast) / t_gp,
+				"blk": t_blk, "bpg": float(t_blk) / t_gp,
+				"fgm": t_fgm, "fga": t_fga,
+				"fg_pct": float(t_fgm) / max(1.0, float(t_fga)),
+				"tpm": t_tpm, "tpa": t_tpa,
+				"tp_pct": float(t_tpm) / max(1.0, float(t_tpa))
+			}
+			data_list.append(entry)
+			
+	# 3. Sorting
+	data_list.sort_custom(func(a, b):
+		var va = a.get(stats_sort_field, 0)
+		var vb = b.get(stats_sort_field, 0)
+		if va is String or vb is String:
+			if stats_sort_asc: return str(va).naturalnocasecmp_to(str(vb)) < 0
+			else: return str(va).naturalnocasecmp_to(str(vb)) > 0
+		if stats_sort_asc: return va < vb
+		else: return va > vb
+	)
 	
-	for i in range(min(10, all_players.size())):
-		var data = all_players[i]
-		var p = data["p"]
-		var t = data["t"]
+	# 4. Scrollable List
+	var scroll = ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	container.add_child(scroll)
+	
+	var list_vbox = VBoxContainer.new()
+	list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list_vbox.add_theme_constant_override("separation", 0)
+	scroll.add_child(list_vbox)
+	
+	for i in range(data_list.size()):
+		var d = data_list[i]
+		var is_player_row = (d["t"] == LeagueManager.player_team)
 		
-		var row_bg = PanelContainer.new()
-		var r_sb = StyleBoxFlat.new()
-		r_sb.bg_color = Color(0.12, 0.12, 0.18, 0.9) if i % 2 == 0 else Color(0.15, 0.15, 0.22, 0.9)
-		if t == LeagueManager.player_team:
-			r_sb.bg_color = Color(0.2, 0.3, 0.4, 0.9)
-			r_sb.border_color = Color(0.0, 0.9, 1.0, 0.6)
-			r_sb.set_border_width_all(1)
-		r_sb.set_corner_radius_all(4)
-		r_sb.content_margin_left = 12; r_sb.content_margin_right = 12
-		r_sb.content_margin_top = 8; r_sb.content_margin_bottom = 8
-		row_bg.add_theme_stylebox_override("panel", r_sb)
+		# Row Panel with Zebra Stripping + Hover
+		var row_panel = PanelContainer.new()
+		row_panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		
-		var hb = HBoxContainer.new()
-		row_bg.add_child(hb)
+		var base_sb = StyleBoxFlat.new()
+		if is_player_row: 
+			base_sb.bg_color = Color(0.0, 0.4, 0.6, 0.3)
+			base_sb.border_color = Color(0.0, 0.9, 1.0, 0.4)
+			base_sb.set_border_width_all(1)
+		else:
+			# Zebra stripping
+			if i % 2 == 1: base_sb.bg_color = Color(1, 1, 1, 0.05)
+			else: base_sb.bg_color = Color(0, 0, 0, 0)
+			
+		base_sb.content_margin_left = 10; base_sb.content_margin_right = 10
+		base_sb.content_margin_top = 4; base_sb.content_margin_bottom = 4
+		row_panel.add_theme_stylebox_override("panel", base_sb)
 		
-		var rank = Label.new()
-		rank.text = str(i+1) + "."
-		rank.custom_minimum_size = Vector2(30, 0)
-		rank.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
-		hb.add_child(rank)
+		# Hover logic
+		var hover_sb = base_sb.duplicate()
+		hover_sb.bg_color = Color(1, 1, 1, 0.12) if not is_player_row else Color(0.0, 0.5, 0.8, 0.4)
+		row_panel.mouse_entered.connect(func(): row_panel.add_theme_stylebox_override("panel", hover_sb))
+		row_panel.mouse_exited.connect(func(): row_panel.add_theme_stylebox_override("panel", base_sb))
 		
+		list_vbox.add_child(row_panel)
+		
+		var row_hbox = HBoxContainer.new()
+		row_hbox.add_theme_constant_override("separation", 8)
+		row_panel.add_child(row_hbox)
+		
+		var base_col = Color(0.0, 0.9, 1.0) if is_player_row else Color(0.9, 0.9, 0.95)
+		var stats_start_idx = 3 if is_indiv else 2
+		
+		# Rank
+		var rk = Label.new()
+		rk.text = str(i+1) + "."
+		rk.custom_minimum_size = Vector2(ws[0], 0)
+		rk.add_theme_font_size_override("font_size", 14)
+		rk.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
+		row_hbox.add_child(rk)
+		
+		# Name
 		var nam = Label.new()
-		nam.text = p.name
-		nam.custom_minimum_size = Vector2(140, 0)
+		nam.text = d.name
+		nam.custom_minimum_size = Vector2(ws[1], 0)
+		nam.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		nam.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		if t == LeagueManager.player_team: nam.add_theme_color_override("font_color", Color(0.0, 0.9, 1.0))
-		hb.add_child(nam)
+		nam.add_theme_font_size_override("font_size", 15)
+		nam.add_theme_color_override("font_color", base_col)
+		# Bolder names
+		var font_bold = ThemeDB.fallback_font # Using default but could use dynamic
+		nam.add_theme_font_override("font", font_bold)
+		row_hbox.add_child(nam)
 		
-		var team_lbl = Label.new()
-		team_lbl.text = t.name
-		team_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		team_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		team_lbl.add_theme_color_override("font_color", t.color_primary)
-		hb.add_child(team_lbl)
+		# Team (Indiv only)
+		if is_indiv:
+			var t_lbl = Label.new()
+			t_lbl.text = d.team_name.to_upper()
+			t_lbl.custom_minimum_size = Vector2(ws[2], 0)
+			t_lbl.add_theme_font_size_override("font_size", 13)
+			var team_col = d.t.color_primary.lightened(0.2)
+			t_lbl.add_theme_color_override("font_color", team_col)
+			row_hbox.add_child(t_lbl)
+			
+		# Divider before stats
+		var sep = VSeparator.new()
+		sep.add_theme_constant_override("separation", 15)
+		row_hbox.add_child(sep)
 		
-		var stat = Label.new()
-		stat.text = "%d %s" % [p.get(stat_field), stat_suffix]
-		stat.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95))
-		hb.add_child(stat)
+		# Stats
+		var vals = [
+			str(d.pts), "%.1f" % d.ppg, 
+			str(d.reb), "%.1f" % d.rpg,
+			str(d.ast), "%.1f" % d.apg,
+			str(d.blk), "%.1f" % d.bpg,
+			str(d.fgm), str(d.fga),
+			("%.3f" % d.fg_pct).lstrip("0") if d.fg_pct > 0 else "-",
+			str(d.tpm), str(d.tpa),
+			("%.3f" % d.tp_pct).lstrip("0") if d.tp_pct > 0 else "-"
+		]
+		if vals[10] == ".": vals[10] = ".000"
+		if d.fg_pct >= 1.0: vals[10] = "1.000"
+		if vals[13] == ".": vals[13] = ".000"
+		if d.tp_pct >= 1.0: vals[13] = "1.000"
 		
-		mini_vbox.add_child(row_bg)
+		var s_offset = 3 if is_indiv else 2
+		
+		for j in range(vals.size()):
+			var sl = Label.new()
+			sl.text = vals[j]
+			sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			sl.custom_minimum_size = Vector2(ws[j+s_offset], 0)
+			sl.add_theme_font_size_override("font_size", 15)
+			
+			var cur_f = fields[j+s_offset]
+			if cur_f == stats_sort_field:
+				sl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+			else:
+				var is_avg = cur_f in ["ppg", "rpg", "apg", "bpg", "fg_pct", "tp_pct"]
+				# Dim totals vs averages
+				if is_avg:
+					sl.add_theme_color_override("font_color", base_col.lightened(0.1))
+				else:
+					sl.add_theme_color_override("font_color", base_col.darkened(0.4))
+			
+			row_hbox.add_child(sl)
 
 func _style_side_button(btn: Button) -> void:
 	var sm = StyleBoxFlat.new()
@@ -766,82 +1095,133 @@ func _style_side_button(btn: Button) -> void:
 	btn.add_theme_font_size_override("font_size", 20)
 	btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
 
-func _create_player_row(p: Resource) -> Control:
+func _create_player_row(p: Resource, t: Resource = null) -> Control:
 	var pnl = PanelContainer.new()
-	pnl.custom_minimum_size = Vector2(320, 80)
-	var sb = StyleBoxFlat.new()
-	sb.bg_color = Color(0.05, 0.05, 0.08, 0.8)
-	sb.border_color = Color(0.3, 0.3, 0.4, 0.5)
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(6)
-	sb.content_margin_left = 12
-	sb.content_margin_right = 12
-	sb.content_margin_top = 8
-	sb.content_margin_bottom = 8
-	pnl.add_theme_stylebox_override("panel", sb)
+	pnl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var t_color = Color(0.3, 0.3, 0.4, 0.5)
+	if t != null and "color_primary" in t:
+		t_color = t.color_primary
+		
+	var sb_normal = StyleBoxFlat.new()
+	sb_normal.bg_color = Color(0.12, 0.12, 0.18, 0.8)
+	sb_normal.border_color = t_color.darkened(0.2)
+	sb_normal.set_border_width_all(2)
+	sb_normal.set_corner_radius_all(4)
+	sb_normal.content_margin_left = 12
+	sb_normal.content_margin_right = 12
+	sb_normal.content_margin_top = 8
+	sb_normal.content_margin_bottom = 8
 	
-	var main_vbox = VBoxContainer.new()
-	main_vbox.add_theme_constant_override("separation", 8)
-	pnl.add_child(main_vbox)
+	var sb_hover = sb_normal.duplicate()
+	sb_hover.bg_color = Color(0.18, 0.18, 0.24, 0.95)
+	sb_hover.border_color = t_color.lightened(0.2)
 	
-	# Top HBox for Name and OVR
-	var hb = HBoxContainer.new()
-	main_vbox.add_child(hb)
+	pnl.add_theme_stylebox_override("panel", sb_normal)
+	pnl.mouse_entered.connect(func(): pnl.add_theme_stylebox_override("panel", sb_hover))
+	pnl.mouse_exited.connect(func(): pnl.add_theme_stylebox_override("panel", sb_normal))
+	
+	var pvbox = VBoxContainer.new()
+	pnl.add_child(pvbox)
+	
+	var header_hbox = HBoxContainer.new()
+	pvbox.add_child(header_hbox)
+	
+	var num_lbl = Label.new()
+	num_lbl.text = "#%d " % p.number if "number" in p else ""
+	num_lbl.add_theme_font_size_override("font_size", 18)
+	num_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+	header_hbox.add_child(num_lbl)
 	
 	var n_lbl = Label.new()
 	n_lbl.text = p.name
 	n_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	n_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	n_lbl.add_theme_font_size_override("font_size", 20)
-	hb.add_child(n_lbl)
+	header_hbox.add_child(n_lbl)
 	
 	var o_lbl = Label.new()
 	if "speed" in p:
 		var po = round((p.speed + p.shot + p.pass_skill + p.tackle + p.strength + p.aggression) / 6.0)
-		o_lbl.text = "OVR " + str(int(po))
-		o_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
-		o_lbl.add_theme_font_size_override("font_size", 20)
+		o_lbl.text = "OVR: " + str(int(po))
+		o_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
+		o_lbl.add_theme_font_size_override("font_size", 18)
 	else:
 		o_lbl.text = "??"
-	hb.add_child(o_lbl)
+	header_hbox.add_child(o_lbl)
 	
-	# Bottom Grid for Individual Stats
 	if "speed" in p:
+		var stat_panel = PanelContainer.new()
+		var stat_bg = StyleBoxFlat.new()
+		stat_bg.bg_color = Color(0.08, 0.08, 0.12, 0.7)
+		stat_bg.border_color = t_color.darkened(0.4)
+		stat_bg.set_border_width_all(1)
+		stat_bg.set_corner_radius_all(6)
+		stat_bg.set_content_margin_all(8)
+		stat_panel.add_theme_stylebox_override("panel", stat_bg)
+		pvbox.add_child(stat_panel)
+
 		var stat_grid = GridContainer.new()
-		stat_grid.columns = 6
+		stat_grid.columns = 2
 		stat_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		stat_grid.add_theme_constant_override("h_separation", 15)
-		main_vbox.add_child(stat_grid)
+		stat_grid.add_theme_constant_override("h_separation", 20)
+		stat_grid.add_theme_constant_override("v_separation", 6)
+		stat_panel.add_child(stat_grid)
 		
-		var stats = ["speed", "shot", "pass_skill", "tackle", "strength", "aggression"]
-		var labels = ["SPD", "SHT", "PAS", "TCK", "STR", "AGG"]
+		var stats_keys = ["speed", "shot", "pass_skill", "tackle", "strength", "aggression"]
+		var stats_labels = ["Speed", "Shooting", "Passing", "Tackling", "Strength", "Aggression"]
 		
-		for i in range(stats.size()):
-			var s_val = p.get(stats[i])
+		for j in range(6):
+			var s_val = float(p.get(stats_keys[j]))
+			
 			var s_vbox = VBoxContainer.new()
 			s_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			s_vbox.add_theme_constant_override("separation", 2)
 			
 			var s_lbl = Label.new()
-			s_lbl.text = labels[i]
+			s_lbl.text = stats_labels[j]
 			s_lbl.add_theme_font_size_override("font_size", 12)
 			s_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
-			s_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			s_vbox.add_child(s_lbl)
+			
+			var bar_hbox = HBoxContainer.new()
+			bar_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			s_vbox.add_child(bar_hbox)
+			
+			var bar = ProgressBar.new()
+			bar.min_value = 0
+			bar.max_value = 100
+			bar.value = s_val
+			bar.show_percentage = false
+			bar.custom_minimum_size = Vector2(0, 10)
+			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			
+			var sb_bar_bg = StyleBoxFlat.new()
+			sb_bar_bg.bg_color = Color(0.05, 0.05, 0.05, 0.8)
+			sb_bar_bg.set_corner_radius_all(3)
+			bar.add_theme_stylebox_override("background", sb_bar_bg)
+			
+			var c = Color.WHITE
+			if s_val <= 50.0:
+				var pt = s_val / 50.0
+				c = Color(0.2, 0.1, 0.4).lerp(Color(0.1, 0.5, 0.9), pt)
+			else:
+				var pt = (s_val - 50.0) / 50.0
+				c = Color(0.1, 0.5, 0.9).lerp(Color(0.5, 1.0, 1.0), pt)
+					
+			var sb_fill = StyleBoxFlat.new()
+			sb_fill.bg_color = c
+			sb_fill.set_corner_radius_all(3)
+			bar.add_theme_stylebox_override("fill", sb_fill)
+			bar_hbox.add_child(bar)
 			
 			var v_lbl = Label.new()
 			v_lbl.text = str(int(s_val))
-			v_lbl.add_theme_font_size_override("font_size", 16)
-			
-			# Color code based on tier (0-10)
-			var c = Color.WHITE
-			if s_val >= 8: c = Color.GREEN_YELLOW
-			elif s_val >= 5: c = Color.WHITE
-			else: c = Color(1.0, 0.5, 0.5)
-			
+			v_lbl.custom_minimum_size = Vector2(22, 0)
+			v_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			v_lbl.add_theme_font_size_override("font_size", 12)
 			v_lbl.add_theme_color_override("font_color", c)
-			v_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			s_vbox.add_child(v_lbl)
+			bar_hbox.add_child(v_lbl)
 			
 			stat_grid.add_child(s_vbox)
 			
@@ -904,6 +1284,9 @@ func _on_simulate_pressed() -> void:
 				break
 				
 	_show_simulation_summary(sim_data, t_home, t_away)
+
+func _on_season_stats_pressed() -> void:
+	_show_season_stats_modal()
 
 func _show_round_summary(played_matches: Array) -> void:
 	var vbox = _build_generic_modal("PLAYOFF ROUND SIMULATED", 600, 450)
@@ -1396,7 +1779,356 @@ func _build_carousel_calendar() -> void:
 			
 			list.add_child(row_bg)
 
+func _show_player_stat_modal(p: Resource, team: Resource) -> void:
+	var ovr = 0
+	if "speed" in p:
+		ovr = int(round((p.speed + p.shot + p.pass_skill + p.tackle + p.strength + p.aggression) / 6.0))
+
+	var vbox = _build_generic_modal("#%d  %s" % [p.number, p.name], 620, 500)
+
+	# ── Pre-compute season FG/3P percentages (used across all rows) ─────
+	var games_played = p.game_log.size() if "game_log" in p else 0
+	var gp_div = max(1, games_played)
+
+	var s_fg_pct = float(p.fgm) / float(max(1, p.fga)) if p.fga > 0 else 0.0
+	var s_tp_pct = float(p.tpm) / float(max(1, p.tpa)) if p.tpa > 0 else 0.0
+	var s_fg_pct_str = ("%.3f" % s_fg_pct).lstrip("0") if p.fga > 0 else "-"
+	if s_fg_pct_str == ".": s_fg_pct_str = ".000"
+	if s_fg_pct >= 1.0: s_fg_pct_str = "1.000"
+	var s_tp_pct_str = ("%.3f" % s_tp_pct).lstrip("0") if p.tpa > 0 else "-"
+	if s_tp_pct_str == ".0": s_tp_pct_str = ".000"
+	if s_tp_pct >= 1.0: s_tp_pct_str = "1.000"
+
+	var stats_pnl = PanelContainer.new()
+	var sp_sb = StyleBoxFlat.new()
+	sp_sb.bg_color = Color(0.1, 0.1, 0.16, 0.8)
+	sp_sb.border_color = Color(0.0, 0.9, 1.0, 0.4)
+	sp_sb.set_border_width_all(1)
+	sp_sb.set_corner_radius_all(6)
+	sp_sb.content_margin_left = 16; sp_sb.content_margin_right = 16
+	sp_sb.content_margin_top = 12; sp_sb.content_margin_bottom = 12
+	stats_pnl.add_theme_stylebox_override("panel", sp_sb)
+	vbox.add_child(stats_pnl)
+
+	var stats_vbox = VBoxContainer.new()
+	stats_vbox.add_theme_constant_override("separation", 10)
+	stats_pnl.add_child(stats_vbox)
+
+	# Shared column layout: label col + RES col + 10 stat cols
+	# New Order: PTS | REB | AST | BLK | FGM | FGA | FG% | 3PM | 3PA | 3P%
+	var STAT_COLS = ["PTS", "REB", "AST", "BLK", "FGM", "FGA", "FG%", "3PM", "3PA", "3P%"]
+	const LABEL_MIN_W = 90
+	const RES_MIN_W = 90
+
+	# ── Column headers ────────────────────────────────────────────────────
+	var hdr_grid = GridContainer.new()
+	hdr_grid.columns = 12
+	hdr_grid.add_theme_constant_override("h_separation", 4)
+	hdr_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stats_vbox.add_child(hdr_grid)
+
+	var hdr_corner1 = Label.new()
+	hdr_corner1.custom_minimum_size = Vector2(LABEL_MIN_W, 0)
+	hdr_grid.add_child(hdr_corner1)
+	var hdr_corner2 = Label.new()
+	hdr_corner2.custom_minimum_size = Vector2(RES_MIN_W, 0)
+	hdr_grid.add_child(hdr_corner2)
+	
+	for col_name in STAT_COLS:
+		var ch = Label.new()
+		ch.text = col_name
+		ch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		ch.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ch.add_theme_font_size_override("font_size", 13)
+		ch.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
+		hdr_grid.add_child(ch)
+
+	stats_vbox.add_child(HSeparator.new())
+
+	# ── Per-game averages row (first) ─────────────────────────────────────
+	var avg_grid = GridContainer.new()
+	avg_grid.columns = 12
+	avg_grid.add_theme_constant_override("h_separation", 4)
+	avg_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stats_vbox.add_child(avg_grid)
+
+	var avg_lbl = Label.new()
+	avg_lbl.text = "Per Game"
+	avg_lbl.custom_minimum_size = Vector2(LABEL_MIN_W, 0)
+	avg_lbl.add_theme_font_size_override("font_size", 14)
+	avg_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
+	avg_grid.add_child(avg_lbl)
+	
+	var avg_spacer = Control.new()
+	avg_spacer.custom_minimum_size = Vector2(RES_MIN_W, 0)
+	avg_grid.add_child(avg_spacer)
+	
+	for av_text in [
+		"%.1f" % (float(p.pts) / gp_div),
+		"%.1f" % (float(p.reb) / gp_div),
+		"%.1f" % (float(p.ast) / gp_div),
+		"%.1f" % (float(p.blk) / gp_div),
+		"%.1f" % (float(p.fgm) / gp_div),
+		"%.1f" % (float(p.fga) / gp_div),
+		s_fg_pct_str,
+		"%.1f" % (float(p.tpm) / gp_div),
+		"%.1f" % (float(p.tpa) / gp_div),
+		s_tp_pct_str,
+	]:
+		var av = Label.new()
+		av.text = av_text
+		av.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		av.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		av.add_theme_font_size_override("font_size", 15)
+		av.add_theme_color_override("font_color", Color(0.0, 0.85, 1.0))
+		avg_grid.add_child(av)
+
+	var gp_note = Label.new()
+	gp_note.text = "(%d game%s)" % [games_played, "" if games_played == 1 else "s"]
+	gp_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	gp_note.add_theme_font_size_override("font_size", 12)
+	gp_note.add_theme_color_override("font_color", Color(0.4, 0.4, 0.5))
+	stats_vbox.add_child(gp_note)
+
+	# ── Individual game rows ──────────────────────────────────────────────
+	var has_log = "game_log" in p and p.game_log.size() > 0
+	if has_log:
+		stats_vbox.add_child(HSeparator.new())
+
+		var log_scroll = ScrollContainer.new()
+		log_scroll.custom_minimum_size = Vector2(0, 180)
+		log_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+		stats_vbox.add_child(log_scroll)
+
+		var log_grid = GridContainer.new()
+		log_grid.columns = 12
+		log_grid.add_theme_constant_override("h_separation", 4)
+		log_grid.add_theme_constant_override("v_separation", 4)
+		log_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		log_scroll.add_child(log_grid)
+
+		# Header: OPP | RES | PTS | REB | AST | BLK | FGM | FGA | FG% | 3PM | 3PA | 3P%
+		for lh in ["OPP", "RES"] + STAT_COLS:
+			var lbl = Label.new()
+			lbl.text = lh
+			lbl.add_theme_font_size_override("font_size", 12)
+			lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
+			lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			if lh == "OPP":
+				lbl.custom_minimum_size = Vector2(LABEL_MIN_W, 0)
+				lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			elif lh == "RES":
+				lbl.custom_minimum_size = Vector2(RES_MIN_W, 0)
+				lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			else:
+				lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			log_grid.add_child(lbl)
+
+		for g in p.game_log:
+			# OPP
+			var opp_lbl = Label.new()
+			opp_lbl.text = "vs " + g.get("opp", "???").left(6).to_upper()
+			opp_lbl.add_theme_font_size_override("font_size", 16)
+			opp_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			opp_lbl.custom_minimum_size = Vector2(LABEL_MIN_W, 0)
+			log_grid.add_child(opp_lbl)
+
+			# RES with score
+			var is_win = g.get("win", false)
+			var res_lbl = Label.new()
+			var t_sc = g.get("team_score", -1)
+			var o_sc = g.get("opp_score", -1)
+			res_lbl.text = ("%s (%d-%d)" % ["W" if is_win else "L", t_sc, o_sc]) if t_sc >= 0 else ("W" if is_win else "L")
+			res_lbl.add_theme_font_size_override("font_size", 16)
+			res_lbl.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5) if is_win else Color(1.0, 0.4, 0.4))
+			res_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			res_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			res_lbl.custom_minimum_size = Vector2(RES_MIN_W, 0)
+			log_grid.add_child(res_lbl)
+
+			# PTS
+			var pts_lbl = Label.new()
+			pts_lbl.text = str(g.get("pts", 0))
+			pts_lbl.add_theme_font_size_override("font_size", 16)
+			pts_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			pts_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			log_grid.add_child(pts_lbl)
+
+			# REB | AST | BLK
+			for stat in ["reb", "ast", "blk"]:
+				var sl = Label.new()
+				sl.text = str(g.get(stat, 0))
+				sl.add_theme_font_size_override("font_size", 16)
+				sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				log_grid.add_child(sl)
+
+			# FGM | FGA | FG%
+			var l_fgm = g.get("fgm", 0); var l_fga = g.get("fga", 0)
+			var fg_pct_val = float(l_fgm) / float(max(1, l_fga)) if l_fga > 0 else 0.0
+			var fg_pct_str = ("%.3f" % fg_pct_val).lstrip("0") if l_fga > 0 else "-"
+			if fg_pct_str == ".": fg_pct_str = ".000"
+			if fg_pct_val >= 1.0: fg_pct_str = "1.000"
+			for cell_val in [str(l_fgm), str(l_fga), fg_pct_str]:
+				var cl = Label.new()
+				cl.text = cell_val
+				cl.add_theme_font_size_override("font_size", 16)
+				cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				cl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				cl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.95))
+				log_grid.add_child(cl)
+
+			# 3PM | 3PA | 3P%
+			var l_tpm = g.get("tpm", 0); var l_tpa = g.get("tpa", 0)
+			var tp_pct_val = float(l_tpm) / float(max(1, l_tpa)) if l_tpa > 0 else 0.0
+			var tp_pct_str = ("%.3f" % tp_pct_val).lstrip("0") if l_tpa > 0 else "-"
+			if tp_pct_str == ".": tp_pct_str = ".000"
+			if tp_pct_val >= 1.0: tp_pct_str = "1.000"
+			for cell_val in [str(l_tpm), str(l_tpa), tp_pct_str]:
+				var cl = Label.new()
+				cl.text = cell_val
+				cl.add_theme_font_size_override("font_size", 16)
+				cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				cl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				cl.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
+				log_grid.add_child(cl)
+
+		# ── Season totals row (pinned below individual games) ─────────────
+		stats_vbox.add_child(HSeparator.new())
+
+		# Headers for totals
+		var tot_hdr_grid = GridContainer.new()
+		tot_hdr_grid.columns = 12
+		tot_hdr_grid.add_theme_constant_override("h_separation", 4)
+		tot_hdr_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		stats_vbox.add_child(tot_hdr_grid)
+		
+		for th in ["", "REC"] + STAT_COLS:
+			var lbl = Label.new()
+			lbl.text = th
+			lbl.add_theme_font_size_override("font_size", 11)
+			lbl.add_theme_color_override("font_color", Color(0.4, 0.4, 0.5))
+			lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			if th == "":
+				lbl.custom_minimum_size = Vector2(LABEL_MIN_W, 0)
+			elif th == "REC":
+				lbl.custom_minimum_size = Vector2(RES_MIN_W, 0)
+				lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			else:
+				lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			tot_hdr_grid.add_child(lbl)
+
+		var totals_grid = GridContainer.new()
+		totals_grid.columns = 12
+		totals_grid.add_theme_constant_override("h_separation", 4)
+		totals_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		stats_vbox.add_child(totals_grid)
+
+		var tot_lbl = Label.new()
+		tot_lbl.text = "Season Totals"
+		tot_lbl.custom_minimum_size = Vector2(LABEL_MIN_W, 0)
+		tot_lbl.add_theme_font_size_override("font_size", 14)
+		tot_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+		totals_grid.add_child(tot_lbl)
+		
+		var rec_val = Label.new()
+		rec_val.text = "%d-%d" % [team.wins, team.losses]
+		rec_val.custom_minimum_size = Vector2(RES_MIN_W, 0)
+		rec_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		rec_val.add_theme_font_size_override("font_size", 16)
+		rec_val.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
+		totals_grid.add_child(rec_val)
+		
+		for sv_text in [
+			str(p.pts), str(p.reb), str(p.ast), str(p.blk),
+			str(p.fgm), str(p.fga), s_fg_pct_str,
+			str(p.tpm), str(p.tpa), s_tp_pct_str
+		]:
+			var sv = Label.new()
+			sv.text = sv_text
+			sv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			sv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			sv.add_theme_font_size_override("font_size", 16)
+			sv.add_theme_color_override("font_color", Color(0.95, 0.95, 1.0))
+			totals_grid.add_child(sv)
+
+	# ── Attribute bars ────────────────────────────────────────────────────
+	if "speed" in p:
+		var attr_pnl = PanelContainer.new()
+		var ap_sb = StyleBoxFlat.new()
+		ap_sb.bg_color = Color(0.08, 0.08, 0.12, 0.8)
+		ap_sb.border_color = Color(0.2, 0.2, 0.3, 0.6)
+		ap_sb.set_border_width_all(1)
+		ap_sb.set_corner_radius_all(6)
+		ap_sb.content_margin_left = 16; ap_sb.content_margin_right = 16
+		ap_sb.content_margin_top = 12; ap_sb.content_margin_bottom = 12
+		attr_pnl.add_theme_stylebox_override("panel", ap_sb)
+		vbox.add_child(attr_pnl)
+
+		var attr_vbox = VBoxContainer.new()
+		attr_vbox.add_theme_constant_override("separation", 10)
+		attr_pnl.add_child(attr_vbox)
+
+		var attr_hdr = Label.new()
+		attr_hdr.text = "PLAYER ATTRIBUTES"
+		attr_hdr.add_theme_font_size_override("font_size", 12)
+		attr_hdr.add_theme_color_override("font_color", Color(0.0, 0.9, 1.0))
+		attr_vbox.add_child(attr_hdr)
+
+		var attr_grid = GridContainer.new()
+		attr_grid.columns = 3
+		attr_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		attr_grid.add_theme_constant_override("h_separation", 20)
+		attr_grid.add_theme_constant_override("v_separation", 8)
+		attr_vbox.add_child(attr_grid)
+
+		var attr_defs = [
+			["OVERALL", ovr],
+			["SPEED", p.speed], ["SHOOTING", p.shot], ["PASSING", p.pass_skill],
+			["TACKLING", p.tackle], ["STRENGTH", p.strength], ["AGGRESSION", p.aggression]
+		]
+		for ad in attr_defs:
+			var a_vbox = VBoxContainer.new()
+			a_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			a_vbox.add_theme_constant_override("separation", 3)
+
+			var a_hb = HBoxContainer.new()
+			var a_name = Label.new()
+			a_name.text = ad[0]
+			a_name.add_theme_font_size_override("font_size", 11)
+			a_name.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
+			a_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			a_hb.add_child(a_name)
+			var a_val = Label.new()
+			a_val.text = str(int(ad[1]))
+			a_val.add_theme_font_size_override("font_size", 13)
+			var av_col = Color(0.4, 0.7, 1.0)
+			if ad[0] == "OVERALL":
+				av_col = Color(1.0, 0.85, 0.2)
+			elif ad[1] >= 80: av_col = Color(0.4, 1.0, 0.5)
+			elif ad[1] <= 35: av_col = Color(1.0, 0.4, 0.4)
+			a_val.add_theme_color_override("font_color", av_col)
+			a_hb.add_child(a_val)
+			a_vbox.add_child(a_hb)
+
+			var bar = ProgressBar.new()
+			bar.min_value = 0; bar.max_value = 99; bar.value = ad[1]
+			bar.show_percentage = false
+			bar.custom_minimum_size = Vector2(0, 7)
+			var bg_sb = StyleBoxFlat.new()
+			bg_sb.bg_color = Color(0.05, 0.05, 0.08)
+			bg_sb.set_corner_radius_all(3)
+			bar.add_theme_stylebox_override("background", bg_sb)
+			var fill_sb = StyleBoxFlat.new()
+			fill_sb.bg_color = av_col
+			fill_sb.set_corner_radius_all(3)
+			bar.add_theme_stylebox_override("fill", fill_sb)
+			a_vbox.add_child(bar)
+
+			attr_grid.add_child(a_vbox)
+
 func _build_generic_modal(title_text: String, w: int, h: int) -> Control:
+
 	var bg = ColorRect.new()
 	bg.color = Color(0, 0, 0, 0.8)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)

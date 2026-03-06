@@ -28,6 +28,25 @@ extends Control
 
 var available_teams: Array = []
 var current_team_index: int = 0
+var selected_color_index: int = 0
+
+# Curated sports color palette — (primary, secondary hint)
+const TEAM_COLORS: Array = [
+	{"name": "Crimson",     "color": Color(0.85, 0.1,  0.1 )},
+	{"name": "Flame",       "color": Color(0.95, 0.4,  0.05)},
+	{"name": "Gold",        "color": Color(0.95, 0.8,  0.05)},
+	{"name": "Lime",        "color": Color(0.35, 0.82, 0.1 )},
+	{"name": "Forest",      "color": Color(0.05, 0.55, 0.25)},
+	{"name": "Teal",        "color": Color(0.05, 0.7,  0.65)},
+	{"name": "Sky",         "color": Color(0.15, 0.6,  0.95)},
+	{"name": "Royal",       "color": Color(0.1,  0.2,  0.85)},
+	{"name": "Indigo",      "color": Color(0.3,  0.1,  0.8 )},
+	{"name": "Violet",      "color": Color(0.65, 0.1,  0.85)},
+	{"name": "Magenta",     "color": Color(0.9,  0.1,  0.6 )},
+	{"name": "Silver",      "color": Color(0.6,  0.65, 0.75)},
+]
+
+var _color_swatch_buttons: Array = []
 
 func _ready() -> void:
 	# Build preview stubs for ALL 36 possible team names so the player
@@ -98,7 +117,33 @@ func _ready() -> void:
 	btn_back.pressed.connect(_on_back_pressed)
 	btn_up.pressed.connect(func(): _cycle_team(-1))
 	btn_down.pressed.connect(func(): _cycle_team(1))
-	opt_team_size.item_selected.connect(func(_idx): _update_ui())
+	opt_team_size.item_selected.connect(_on_team_size_changed)
+	
+	# Color swatch — insert below team picker (above OptionsPanel)
+	var swatch_hbox = HBoxContainer.new()
+	swatch_hbox.name = "SwatchRow"
+	swatch_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	swatch_hbox.add_theme_constant_override("separation", 8)
+	$MainHBox/VBoxContainer.add_child(swatch_hbox)
+	$MainHBox/VBoxContainer.move_child(swatch_hbox, $MainHBox/VBoxContainer/VBox_Team.get_index() + 1)
+	
+	var swatch_label = Label.new()
+	swatch_label.text = "Team Color:"
+	swatch_label.add_theme_font_size_override("font_size", 16)
+	swatch_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.75))
+	swatch_hbox.add_child(swatch_label)
+	
+	_color_swatch_buttons.clear()
+	for ci in range(TEAM_COLORS.size()):
+		var c_data = TEAM_COLORS[ci]
+		var btn = Button.new()
+		btn.custom_minimum_size = Vector2(32, 32)
+		btn.tooltip_text = c_data["name"]
+		var idx_capture = ci
+		btn.pressed.connect(func(): _select_color(idx_capture))
+		swatch_hbox.add_child(btn)
+		_color_swatch_buttons.append(btn)
+	_apply_swatch_styles()
 	
 	# Info Panel explaining bottom league & promo/relegation
 	var info_pnl = PanelContainer.new()
@@ -141,6 +186,7 @@ func _ready() -> void:
 	team_container.focus_exited.connect(_update_team_border)
 	
 	_apply_styling()
+	_on_team_size_changed(0)
 	_update_ui()
 	team_container.grab_focus()
 
@@ -158,6 +204,51 @@ func _cycle_team(dir: int) -> void:
 	current_team_index = (current_team_index + dir) % available_teams.size()
 	if current_team_index < 0: current_team_index = available_teams.size() - 1
 	_update_ui()
+
+func _on_team_size_changed(_idx: int) -> void:
+	var t_size = opt_team_size.get_selected_id()
+	for t in available_teams:
+		# Adjust roster size to match selection
+		if t.roster.size() < t_size:
+			# Add missing players
+			for i in range(t_size - t.roster.size()):
+				var f_name = LeagueManager.FIRST_NAMES[randi() % LeagueManager.FIRST_NAMES.size()]
+				var l_name = LeagueManager.LAST_NAMES[randi() % LeagueManager.LAST_NAMES.size()]
+				var p = LeagueManager.PlayerDataScript.new("%s %s" % [f_name, l_name], 100)
+				p.number = randi_range(0, 99)
+				p.randomize_stats(1)
+				t.add_player(p)
+		elif t.roster.size() > t_size:
+			# Truncate roster
+			t.roster = t.roster.slice(0, t_size)
+	_update_ui()
+
+func _select_color(ci: int) -> void:
+	selected_color_index = ci
+	_apply_swatch_styles()
+	_update_ui()
+
+# Returns the currently-chosen primary color.
+func _get_chosen_color() -> Color:
+	if TEAM_COLORS.size() == 0: return Color(0.55, 0.55, 0.7)
+	return TEAM_COLORS[selected_color_index]["color"]
+
+# Styles all swatch buttons: selected one gets bright white border.
+func _apply_swatch_styles() -> void:
+	for i in range(_color_swatch_buttons.size()):
+		var btn = _color_swatch_buttons[i]
+		var c: Color = TEAM_COLORS[i]["color"]
+		var is_sel = (i == selected_color_index)
+		var sb = StyleBoxFlat.new()
+		sb.bg_color = c
+		sb.border_color = Color.WHITE if is_sel else c.darkened(0.3)
+		sb.set_border_width_all(3 if is_sel else 1)
+		sb.set_corner_radius_all(4)
+		sb.set_content_margin_all(0)
+		btn.add_theme_stylebox_override("normal", sb)
+		var h = sb.duplicate()
+		h.bg_color = c.lightened(0.15)
+		btn.add_theme_stylebox_override("hover", h)
 
 func _update_team_border() -> void:
 	if not team_container.is_connected("draw", _draw_team_border):
@@ -187,15 +278,20 @@ func _update_ui() -> void:
 	if available_teams.is_empty(): return
 	var t = available_teams[current_team_index]
 	
+	# Apply the player's chosen color to this stub team
+	var chosen = _get_chosen_color()
+	t.color_primary = chosen
+	t.color_secondary = TeamData.derive_secondary(chosen)
+	
 	team_name.text = t.name
-	team_name.add_theme_color_override("font_color", t.color_primary)
+	team_name.add_theme_color_override("font_color", chosen)
 	team_rating.text = "OVR: %d" % _get_team_rating(t)
-	team_rating.add_theme_color_override("font_color", t.color_primary.lightened(0.2))
+	team_rating.add_theme_color_override("font_color", chosen.lightened(0.2))
 	team_logo.texture = t.logo
 	
 	for btn in [btn_up, btn_down]:
-		btn.add_theme_color_override("font_color", t.color_primary.darkened(0.3))
-		btn.add_theme_color_override("font_hover_color", t.color_primary.lightened(0.2))
+		btn.add_theme_color_override("font_color", chosen.darkened(0.3))
+		btn.add_theme_color_override("font_hover_color", chosen.lightened(0.2))
 		
 	_update_team_border()
 	
@@ -203,12 +299,7 @@ func _update_ui() -> void:
 	for c in roster_list.get_children():
 		c.queue_free()
 		
-
-	var t_size = opt_team_size.get_selected_id()
-	if t_size <= 0: t_size = 5
-	var display_count = min(t.roster.size(), t_size)
-	
-	for i in range(display_count):
+	for i in range(t.roster.size()):
 		var p = t.roster[i]
 		var pnl = PanelContainer.new()
 		var p_ref = p # Capture iteration variable
@@ -385,7 +476,8 @@ func _show_player_card(player: Resource, theme_color: Color) -> void:
 func _on_reset_pressed() -> void:
 	if available_teams.is_empty(): return
 	var t = available_teams[current_team_index]
-	LeagueManager.reset_team_roster(t)
+	var t_size = opt_team_size.get_selected_id()
+	LeagueManager.reset_team_roster(t, t_size)
 	_update_ui()
 
 func _get_team_rating(team: Resource) -> int:
@@ -448,6 +540,10 @@ func _update_season_length_options() -> void:
 
 func _on_start_pressed() -> void:
 	var t = available_teams[current_team_index]
+	# Apply the selected color permanently to the stub before handing off
+	var chosen = _get_chosen_color()
+	t.color_primary = chosen
+	t.color_secondary = TeamData.derive_secondary(chosen)
 	
 	var q_len = opt_quarters.get_selected_id()
 	if q_len <= 0: q_len = 30
@@ -467,8 +563,8 @@ func _on_start_pressed() -> void:
 	var l_size = 8
 	if opt_lsize and opt_lsize.get_selected_id() > 0: l_size = opt_lsize.get_selected_id()
 	
-	# l_size = teams per division; chosen name ensures the player's pick lands in Bronze
-	LeagueManager.generate_default_league(l_size, t.name)
+	# Pass chosen colors so generate_default_league preserves the player's pick
+	LeagueManager.generate_default_league(l_size, t.name, chosen, t.color_secondary, t_size)
 	
 	var config = {
 		"quarter_duration": float(q_len),

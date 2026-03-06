@@ -1,10 +1,8 @@
-res://ui/custom_player_creator.gd
-res://ui/season_setup.gd
+res://scripts/data/team_data.gd
 res://scripts/managers/league_manager.gd
 res://ui/quick_match_setup.gd
-res://scripts/data/player_data.gd
-res://ui/main_menu.gd
-res://scenes/court/camera_rig.gd
-res://scripts/game_manager.gd
 res://ui/season_hub.gd
-res://ui/main_menu.tscn
+res://ui/season_setup.gd
+res://scripts/data/player_data.gd
+res://scenes/characters/player.gd
+res://scripts/game_manager.gd

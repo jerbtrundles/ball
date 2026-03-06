@@ -58,6 +58,30 @@ var _court_display: PanelContainer = null
 var _court_icon_lbl: Label = null
 var _court_name_lbl: Label = null
 
+# Same palette as franchise setup
+const TEAM_COLORS: Array = [
+	{"name": "Crimson",  "color": Color(0.85, 0.1,  0.1 )},
+	{"name": "Flame",    "color": Color(0.95, 0.4,  0.05)},
+	{"name": "Gold",     "color": Color(0.95, 0.8,  0.05)},
+	{"name": "Lime",     "color": Color(0.35, 0.82, 0.1 )},
+	{"name": "Forest",   "color": Color(0.05, 0.55, 0.25)},
+	{"name": "Teal",     "color": Color(0.05, 0.7,  0.65)},
+	{"name": "Sky",      "color": Color(0.15, 0.6,  0.95)},
+	{"name": "Royal",    "color": Color(0.1,  0.2,  0.85)},
+	{"name": "Indigo",   "color": Color(0.3,  0.1,  0.8 )},
+	{"name": "Violet",   "color": Color(0.65, 0.1,  0.85)},
+	{"name": "Magenta",  "color": Color(0.9,  0.1,  0.6 )},
+	{"name": "Silver",   "color": Color(0.6,  0.65, 0.75)},
+]
+
+# Per-team selected color indices (-1 = use team's auto color)
+var selected_color_a_index: int = -1
+var selected_color_b_index: int = -1
+
+# Swatch button refs so we can restyle on selection
+var _swatch_btns_a: Array = []
+var _swatch_btns_b: Array = []
+
 const LOGO_SIZE = 96
 
 func _ready() -> void:
@@ -66,6 +90,12 @@ func _ready() -> void:
 	
 	for div in LeagueManager.divisions:
 		available_teams.append_array(div["teams"])
+	
+	# Default color indices: closest swatch to each team's auto-color
+	if available_teams.size() > 0:
+		selected_color_a_index = _nearest_color_index(available_teams[team_a_index].color_primary)
+	if available_teams.size() > 1:
+		selected_color_b_index = _nearest_color_index(available_teams[team_b_index].color_primary)
 	
 	# Quarter Options
 	opt_quarters.add_item("15 Seconds", 15)
@@ -88,13 +118,17 @@ func _ready() -> void:
 	_style_arrow_button(btn_court_prev)
 	_style_arrow_button(btn_court_next)
 	
-	# --- Connections ---
+	# Connect interaction
 	btn_start.pressed.connect(_on_start_pressed)
 	btn_back.pressed.connect(_on_back_pressed)
 	btn_a_up.pressed.connect(func(): _cycle_team_a(-1))
 	btn_a_down.pressed.connect(func(): _cycle_team_a(1))
 	btn_b_up.pressed.connect(func(): _cycle_team_b(-1))
 	btn_b_down.pressed.connect(func(): _cycle_team_b(1))
+	
+	# Build swatch strips once — they live inside VBox_TeamA / VBox_TeamB
+	_build_swatch_strip(team_a_container, true)
+	_build_swatch_strip(team_b_container, false)
 	
 	# Side selector — clickable zones
 	zone_a.gui_input.connect(func(e): _on_zone_click(e, 0))
@@ -477,12 +511,84 @@ func _on_team_b_input(event: InputEvent) -> void:
 func _cycle_team_a(dir: int) -> void:
 	team_a_index = (team_a_index + dir) % available_teams.size()
 	if team_a_index < 0: team_a_index = available_teams.size() - 1
+	# When switching team, best-match the new team's color
+	selected_color_a_index = _nearest_color_index(available_teams[team_a_index].color_primary)
 	_update_ui()
 
 func _cycle_team_b(dir: int) -> void:
 	team_b_index = (team_b_index + dir) % available_teams.size()
 	if team_b_index < 0: team_b_index = available_teams.size() - 1
+	selected_color_b_index = _nearest_color_index(available_teams[team_b_index].color_primary)
 	_update_ui()
+
+# Returns the TEAM_COLORS index closest (by rgb distance) to `c`
+func _nearest_color_index(c: Color) -> int:
+	var best_i = 0
+	var best_d = 9999.0
+	for i in range(TEAM_COLORS.size()):
+		var sc: Color = TEAM_COLORS[i]["color"]
+		var d = abs(sc.r - c.r) + abs(sc.g - c.g) + abs(sc.b - c.b)
+		if d < best_d:
+			best_d = d
+			best_i = i
+	return best_i
+
+# Builds a compact swatch strip and appends it to the given parent control.
+func _build_swatch_strip(parent: Control, is_team_a: bool) -> void:
+	var row = HBoxContainer.new()
+	row.name = "SwatchStrip"
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 4)
+	parent.add_child(row)
+	
+	var btns: Array = []
+	for ci in range(TEAM_COLORS.size()):
+		var btn = Button.new()
+		btn.custom_minimum_size = Vector2(20, 20)
+		btn.tooltip_text = TEAM_COLORS[ci]["name"]
+		btn.focus_mode = Control.FOCUS_NONE
+		var idx_cap = ci
+		if is_team_a:
+			btn.pressed.connect(func(): _select_color_a(idx_cap))
+		else:
+			btn.pressed.connect(func(): _select_color_b(idx_cap))
+		row.add_child(btn)
+		btns.append(btn)
+	if is_team_a:
+		_swatch_btns_a = btns
+	else:
+		_swatch_btns_b = btns
+
+func _select_color_a(ci: int) -> void:
+	selected_color_a_index = ci
+	_update_ui()
+
+func _select_color_b(ci: int) -> void:
+	selected_color_b_index = ci
+	_update_ui()
+
+func _get_effective_color(team_index: int, selected_ci: int) -> Color:
+	if selected_ci >= 0 and selected_ci < TEAM_COLORS.size():
+		return TEAM_COLORS[selected_ci]["color"]
+	if available_teams.size() > team_index:
+		return available_teams[team_index].color_primary
+	return Color(0.55, 0.55, 0.7)
+
+func _apply_swatch_styles(btns: Array, selected_ci: int) -> void:
+	for i in range(btns.size()):
+		var btn: Button = btns[i]
+		var c: Color = TEAM_COLORS[i]["color"]
+		var is_sel = (i == selected_ci)
+		var sb = StyleBoxFlat.new()
+		sb.bg_color = c
+		sb.border_color = Color.WHITE if is_sel else c.darkened(0.3)
+		sb.set_border_width_all(3 if is_sel else 1)
+		sb.set_corner_radius_all(3)
+		sb.set_content_margin_all(0)
+		btn.add_theme_stylebox_override("normal", sb)
+		var h = sb.duplicate()
+		h.bg_color = c.lightened(0.15)
+		btn.add_theme_stylebox_override("hover", h)
 
 func _set_side(side: int) -> void:
 	selected_side = side
@@ -505,26 +611,38 @@ func _update_ui() -> void:
 	var t_a = available_teams[team_a_index]
 	var t_b = available_teams[team_b_index]
 	
+	# Apply chosen colors to the team data so everything downstream reads them
+	var col_a = _get_effective_color(team_a_index, selected_color_a_index)
+	var col_b = _get_effective_color(team_b_index, selected_color_b_index)
+	t_a.color_primary = col_a
+	t_a.color_secondary = TeamData.derive_secondary(col_a)
+	t_b.color_primary = col_b
+	t_b.color_secondary = TeamData.derive_secondary(col_b)
+	
 	# Teams
 	team_a_name.text = t_a.name
-	team_a_name.add_theme_color_override("font_color", t_a.color_primary)
+	team_a_name.add_theme_color_override("font_color", col_a)
 	team_a_rating.text = "OVR: %d" % _get_team_rating(t_a)
-	team_a_rating.add_theme_color_override("font_color", t_a.color_primary.lightened(0.2))
+	team_a_rating.add_theme_color_override("font_color", col_a.lightened(0.2))
 	team_a_logo.texture = t_a.logo
 	
 	team_b_name.text = t_b.name
-	team_b_name.add_theme_color_override("font_color", t_b.color_primary)
+	team_b_name.add_theme_color_override("font_color", col_b)
 	team_b_rating.text = "OVR: %d" % _get_team_rating(t_b)
-	team_b_rating.add_theme_color_override("font_color", t_b.color_primary.lightened(0.2))
+	team_b_rating.add_theme_color_override("font_color", col_b.lightened(0.2))
 	team_b_logo.texture = t_b.logo
 	
 	# Arrow colors
 	for btn in [btn_a_up, btn_a_down]:
-		btn.add_theme_color_override("font_color", t_a.color_primary.darkened(0.3))
-		btn.add_theme_color_override("font_hover_color", t_a.color_primary.lightened(0.2))
+		btn.add_theme_color_override("font_color", col_a.darkened(0.3))
+		btn.add_theme_color_override("font_hover_color", col_a.lightened(0.2))
 	for btn in [btn_b_up, btn_b_down]:
-		btn.add_theme_color_override("font_color", t_b.color_primary.darkened(0.3))
-		btn.add_theme_color_override("font_hover_color", t_b.color_primary.lightened(0.2))
+		btn.add_theme_color_override("font_color", col_b.darkened(0.3))
+		btn.add_theme_color_override("font_hover_color", col_b.lightened(0.2))
+	
+	# Restyle swatches
+	_apply_swatch_styles(_swatch_btns_a, selected_color_a_index)
+	_apply_swatch_styles(_swatch_btns_b, selected_color_b_index)
 	
 	# --- Side selector: 🎮 icon moves between zones ---
 	zone_a_label.text = ""

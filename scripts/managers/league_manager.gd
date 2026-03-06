@@ -62,16 +62,16 @@ func _ready():
 
 # Build a lightweight stub for every possible team name so the setup screen
 # can show all 36 options before the real league is generated.
-func build_all_team_stubs() -> Array:
+func build_all_team_stubs(roster_size: int = 5) -> Array:
 	var stubs: Array = []
 	for idx in range(TEAM_NAMES.size()):
 		var t_name = TEAM_NAMES[idx]
-		var hue = float(idx) / float(TEAM_NAMES.size())
-		var color = Color.from_hsv(hue, 0.7, 0.85)
+		# Use a neutral placeholder — the player will pick the real color in setup
+		var color = Color(0.55, 0.55, 0.7)
 		var team = TeamDataScript.new(t_name, color)
 		_generate_team_logo(team, t_name, color)
 		# Add a minimal bronze-tier roster so the OVR display works
-		for k in range(5):
+		for k in range(roster_size):
 			var f_name = FIRST_NAMES[randi() % FIRST_NAMES.size()]
 			var l_name = LAST_NAMES[randi() % LAST_NAMES.size()]
 			var p = PlayerDataScript.new("%s %s" % [f_name, l_name], 100)
@@ -81,7 +81,7 @@ func build_all_team_stubs() -> Array:
 		stubs.append(team)
 	return stubs
 
-func generate_default_league(teams_per_division: int = 8, chosen_team_name: String = ""):
+func generate_default_league(teams_per_division: int = 8, chosen_team_name: String = "", chosen_color: Color = Color(-1,-1,-1), chosen_secondary: Color = Color(-1,-1,-1), roster_size: int = 5):
 	divisions = []
 	current_season = 1
 	var used_names: Array = []
@@ -112,17 +112,29 @@ func generate_default_league(teams_per_division: int = 8, chosen_team_name: Stri
 				t_name = "Team %d" % (used_names.size() + 1)
 			used_names.append(t_name)
 			
-			# Generate color based on division + index
-			var hue = float(j) / float(teams_per_division)
-			var sat = 0.5 + (float(i) * 0.2)
-			var val = 0.8
-			var color = Color.from_hsv(hue, sat, val)
+			var color: Color
+			var secondary: Color
+			# First team is always the player's team when chosen_team_name is set.
+			# Preserve the player's hand-picked color instead of overwriting it.
+			if i == 0 and j == 0 and chosen_team_name != "" and chosen_color.r >= 0.0:
+				color = chosen_color
+				if chosen_secondary.r >= 0.0:
+					secondary = chosen_secondary
+				else:
+					secondary = TeamDataScript.derive_secondary(color)
+			else:
+				# Auto-generate color for all other (AI) teams
+				var hue = float(j) / float(teams_per_division)
+				var sat = 0.5 + (float(i) * 0.2)
+				var val = 0.8
+				color = Color.from_hsv(hue, sat, val)
+				secondary = TeamDataScript.derive_secondary(color)
 			
-			var team = TeamDataScript.new(t_name, color)
+			var team = TeamDataScript.new(t_name, color, secondary)
 			_generate_team_logo(team, t_name, color)
 			
-			# Generate Roster (5 players)
-			for k in range(5):
+			# Generate Roster
+			for k in range(roster_size):
 				var f_name = FIRST_NAMES[randi() % FIRST_NAMES.size()]
 				var l_name = LAST_NAMES[randi() % LAST_NAMES.size()]
 				var p_name = "%s %s" % [f_name, l_name]
@@ -141,7 +153,7 @@ func generate_default_league(teams_per_division: int = 8, chosen_team_name: Stri
 		
 	print("League Structure Generated.")
 
-func reset_team_roster(team: Resource) -> void:
+func reset_team_roster(team: Resource, roster_size: int = 5) -> void:
 	# Find division tier to appropriately scale the generated stats
 	var tier = 1
 	for i in range(divisions.size()):
@@ -150,7 +162,7 @@ func reset_team_roster(team: Resource) -> void:
 			break
 			
 	team.roster.clear()
-	for k in range(5):
+	for k in range(roster_size):
 		var f_name = FIRST_NAMES[randi() % FIRST_NAMES.size()]
 		var l_name = LAST_NAMES[randi() % LAST_NAMES.size()]
 		var p_name = "%s %s" % [f_name, l_name]
@@ -161,16 +173,38 @@ func reset_team_roster(team: Resource) -> void:
 		team.add_player(p)
 
 func start_new_season(selected_team: Resource, config: Dictionary) -> void:
-	player_team = selected_team
 	season_config = config
 	current_week = 0
 	is_postseason = false
 	playoff_schedule.clear()
 	current_save_file = ""
 	
+	# Resolve player_team to the actual object inside divisions (generate_default_league
+	# creates fresh instances, so the stub passed in is a different reference).
+	player_team = null
+	for div in divisions:
+		for t in div["teams"]:
+			if t.name == selected_team.name:
+				player_team = t
+				break
+		if player_team:
+			break
+	# Fallback: keep the stub if no match found (shouldn't happen)
+	if not player_team:
+		player_team = selected_team
+	
+	# Copy the stub's roster (what the player saw & customized in setup) into
+	# the real team object — generate_default_league creates a fresh random roster
+	# that would otherwise silently replace it.
+	player_team.roster.clear()
+	for p in selected_team.roster:
+		player_team.roster.append(p)
+	
 	_generate_schedule()
 	save_season()
 	get_tree().change_scene_to_file("res://ui/season_hub.tscn")
+
+
 
 func _generate_schedule() -> void:
 	schedule.clear()
@@ -330,6 +364,7 @@ func _get_team_by_name(tname: String) -> Resource:
 			if t.name == tname: return t
 	return null
 
+
 func simulate_week() -> Dictionary:
 	if is_postseason:
 		return simulate_playoff_week()
@@ -486,9 +521,12 @@ func simulate_detailed_match(t_home: Resource, t_away: Resource) -> Dictionary:
 		
 	var win_team = t_home if h_score > a_score else t_away
 	
+	var all_rosters = t_home.roster.duplicate()
+	all_rosters.append_array(t_away.roster)
+	
 	var pre_stats = {}
-	for p in win_team.roster:
-		pre_stats[p] = {"pts": p.pts, "reb": p.reb, "ast": p.ast}
+	for p in all_rosters:
+		pre_stats[p] = {"pts": p.pts, "reb": p.reb, "ast": p.ast, "blk": p.blk, "fga": p.fga, "fgm": p.fgm, "tpa": p.tpa, "tpm": p.tpm}
 		
 	_simulate_team_player_stats(t_home, h_score)
 	_simulate_team_player_stats(t_away, a_score)
@@ -501,20 +539,47 @@ func simulate_detailed_match(t_home: Resource, t_away: Resource) -> Dictionary:
 	var best_reb_val = -1
 	var best_ast_val = -1
 	
-	for p in win_team.roster:
+	for p in all_rosters:
 		var g_pts = p.pts - pre_stats[p].pts
 		var g_reb = p.reb - pre_stats[p].reb
 		var g_ast = p.ast - pre_stats[p].ast
+		var g_blk = p.blk - pre_stats[p].blk
+		var g_fga = p.fga - pre_stats[p].fga
+		var g_fgm = p.fgm - pre_stats[p].fgm
+		var g_tpa = p.tpa - pre_stats[p].tpa
+		var g_tpm = p.tpm - pre_stats[p].tpm
 		
-		if g_pts > best_pts:
-			best_scorer = p
-			best_pts = g_pts
-		if g_reb > best_reb_val:
-			best_reb = p
-			best_reb_val = g_reb
-		if g_ast > best_ast_val:
-			best_ast = p
-			best_ast_val = g_ast
+		var is_home = p in t_home.roster
+		var is_win = (is_home and h_score > a_score) or (not is_home and a_score > h_score)
+		var opp = t_away.name if is_home else t_home.name
+		var t_score = h_score if is_home else a_score
+		var o_score = a_score if is_home else h_score
+		
+		p.game_log.append({
+			"opp": opp,
+			"pts": g_pts,
+			"reb": g_reb,
+			"ast": g_ast,
+			"blk": g_blk,
+			"fga": g_fga,
+			"fgm": g_fgm,
+			"tpa": g_tpa,
+			"tpm": g_tpm,
+			"win": is_win,
+			"team_score": t_score,
+			"opp_score": o_score
+		})
+		
+		if p in win_team.roster:
+			if g_pts > best_pts:
+				best_scorer = p
+				best_pts = g_pts
+			if g_reb > best_reb_val:
+				best_reb = p
+				best_reb_val = g_reb
+			if g_ast > best_ast_val:
+				best_ast = p
+				best_ast_val = g_ast
 			
 	return {
 		"home_score": h_score,
@@ -532,20 +597,35 @@ func simulate_detailed_match(t_home: Resource, t_away: Resource) -> Dictionary:
 func _simulate_team_player_stats(t: Resource, total_pts: int) -> void:
 	if t.roster.is_empty(): return
 	
+	# Only distribute stats to the active players (respects team_size setting)
+	var team_size = season_config.get("team_size", t.roster.size())
+	var active_roster = t.roster.slice(0, min(team_size, t.roster.size()))
+	
 	# Distribute points weighted by shot attribute
 	var shot_pool = 0.0
-	for p in t.roster: shot_pool += max(1.0, p.shot)
+	for p in active_roster: shot_pool += max(1.0, p.shot)
 	
 	var pts_remaining = total_pts
 	while pts_remaining > 0:
 		var roll = randf_range(0, shot_pool)
 		var curr = 0.0
-		for p in t.roster:
+		for p in active_roster:
 			curr += max(1.0, p.shot)
 			if roll <= curr:
 				# 2 or 3 pointer
-				var made = 3 if p.shot >= 8 and randf() > 0.6 else 2
+				var is_three = p.shot >= 8 and randf() > 0.6
+				var made = 3 if is_three else 2
 				made = min(made, pts_remaining)
+				
+				# Generate realistic attempts (e.g. 40-50% FG)
+				var attempt_multiplier = randf_range(1.5, 2.5)
+				p.fga += int(1 * attempt_multiplier)
+				p.fgm += 1
+				
+				if is_three and made == 3:
+					p.tpa += int(1 * attempt_multiplier)
+					p.tpm += 1
+					
 				p.pts += made
 				pts_remaining -= made
 				break
@@ -557,10 +637,10 @@ func _simulate_team_player_stats(t: Resource, total_pts: int) -> void:
 	
 	for i in range(expected_rebounds):
 		var pool = 0.0
-		for p in t.roster: pool += max(1.0, p.strength)
+		for p in active_roster: pool += max(1.0, p.strength)
 		var roll = randf_range(0, pool)
 		var curr = 0.0
-		for p in t.roster:
+		for p in active_roster:
 			curr += max(1.0, p.strength)
 			if roll <= curr:
 				p.reb += 1
@@ -568,10 +648,10 @@ func _simulate_team_player_stats(t: Resource, total_pts: int) -> void:
 				
 	for i in range(expected_assists):
 		var pool = 0.0
-		for p in t.roster: pool += max(1.0, p.pass_skill)
+		for p in active_roster: pool += max(1.0, p.pass_skill)
 		var roll = randf_range(0, pool)
 		var curr = 0.0
-		for p in t.roster:
+		for p in active_roster:
 			curr += max(1.0, p.pass_skill)
 			if roll <= curr:
 				p.ast += 1
@@ -579,10 +659,10 @@ func _simulate_team_player_stats(t: Resource, total_pts: int) -> void:
 				
 	for i in range(expected_blocks):
 		var pool = 0.0
-		for p in t.roster: pool += max(1.0, p.tackle)
+		for p in active_roster: pool += max(1.0, p.tackle)
 		var roll = randf_range(0, pool)
 		var curr = 0.0
-		for p in t.roster:
+		for p in active_roster:
 			curr += max(1.0, p.tackle)
 			if roll <= curr:
 				p.blk += 1
@@ -783,6 +863,7 @@ func save_season() -> void:
 			var t_data = {
 				"name": team.name,
 				"color_primary": team.color_primary.to_html(),
+				"color_secondary": team.color_secondary.to_html(),
 				"wins": team.wins,
 				"losses": team.losses,
 				"pf": team.pf,
@@ -803,7 +884,11 @@ func save_season() -> void:
 					"pts": p.pts,
 					"reb": p.reb,
 					"ast": p.ast,
-					"blk": p.blk
+					"blk": p.blk,
+					"fgm": p.fgm,
+					"fga": p.fga,
+					"tpm": p.tpm,
+					"tpa": p.tpa
 				})
 			div_data["teams"].append(t_data)
 		save_data["divisions"].append(div_data)
@@ -856,8 +941,15 @@ func load_season(filename: String) -> bool:
 		for raw_t in raw_teams:
 			var t_name = raw_t.get("name", "Team")
 			var color = Color.html(raw_t.get("color_primary", "ffffff"))
+			# Restore secondary; derive it if missing (old saves)
+			var secondary_str = raw_t.get("color_secondary", "")
+			var secondary: Color
+			if secondary_str != "":
+				secondary = Color.html(secondary_str)
+			else:
+				secondary = TeamDataScript.derive_secondary(color)
 			
-			var team = TeamDataScript.new(t_name, color)
+			var team = TeamDataScript.new(t_name, color, secondary)
 			team.wins = raw_t.get("wins", 0)
 			team.losses = raw_t.get("losses", 0)
 			team.pf = raw_t.get("pf", 0)
@@ -880,6 +972,10 @@ func load_season(filename: String) -> bool:
 				p.reb = raw_p.get("reb", 0)
 				p.ast = raw_p.get("ast", 0)
 				p.blk = raw_p.get("blk", 0)
+				p.fga = raw_p.get("fga", 0)
+				p.fgm = raw_p.get("fgm", 0)
+				p.tpa = raw_p.get("tpa", 0)
+				p.tpm = raw_p.get("tpm", 0)
 				team.add_player(p)
 				
 			teams_in_div.append(team)
@@ -925,7 +1021,7 @@ func record_season_match_result(player_score: int, opponent_score: int, opponent
 	
 	var pre_stats = {}
 	for p in all_players:
-		pre_stats[p] = {"pts": p.pts, "reb": p.reb, "ast": p.ast}
+		pre_stats[p] = {"pts": p.pts, "reb": p.reb, "ast": p.ast, "blk": p.blk, "fga": p.fga, "fgm": p.fgm, "tpa": p.tpa, "tpm": p.tpm}
 		
 	# Mock-generate player stats for the played game until real box scores are active
 	_simulate_team_player_stats(player_team, player_score)
@@ -944,6 +1040,34 @@ func record_season_match_result(player_score: int, opponent_score: int, opponent
 		var g_pts = p.pts - pre_stats[p].pts
 		var g_reb = p.reb - pre_stats[p].reb
 		var g_ast = p.ast - pre_stats[p].ast
+		var g_blk = p.blk - pre_stats[p].blk
+		var g_fga = p.fga - pre_stats[p].fga
+		var g_fgm = p.fgm - pre_stats[p].fgm
+		var g_tpa = p.tpa - pre_stats[p].tpa
+		var g_tpm = p.tpm - pre_stats[p].tpm
+		
+		# For actual played games, update the player's game_log
+		var is_home = p in player_team.roster
+		var is_win = (is_home and player_score > opponent_score) or (not is_home and opponent_score > player_score)
+		var opp_name = opponent.name if is_home else player_team.name
+		var t_score = player_score if is_home else opponent_score
+		var o_score = opponent_score if is_home else player_score
+		
+		if not ("game_log" in p): p.game_log = []
+		p.game_log.append({
+			"opp": opp_name,
+			"pts": g_pts,
+			"reb": g_reb,
+			"ast": g_ast,
+			"blk": g_blk,
+			"fga": g_fga,
+			"fgm": g_fgm,
+			"tpa": g_tpa,
+			"tpm": g_tpm,
+			"win": is_win,
+			"team_score": t_score,
+			"opp_score": o_score
+		})
 		
 		if g_pts > best_pts:
 			best_scorer = p
@@ -1052,7 +1176,8 @@ func process_season_rollover(champion_name: String) -> void:
 		for t in div["teams"]:
 			t.wins = 0; t.losses = 0; t.pf = 0; t.pa = 0; t.streak = 0
 			for p in t.roster:
-				p.pts = 0; p.reb = 0; p.ast = 0; p.blk = 0
+				p.pts = 0; p.reb = 0; p.ast = 0; p.blk = 0; p.fga = 0; p.fgm = 0; p.tpa = 0; p.tpm = 0
+				if "game_log" in p: p.game_log.clear()
 				
 	current_season += 1
 	is_postseason = false

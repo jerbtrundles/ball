@@ -1,11 +1,11 @@
 63f7b34db8d8cdea90c76aacccf841ec
-::res://::1772674928
+::res://::1772763885
 icon.svg::CompressedTexture2D::7034787687770974653::1771972003::1772674928::1::::<><><>0<>0<>6fc2e1ec843bc013b446d17b7e15aad1<>res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex::
 test_decal.gd::GDScript::2781917403597231912::1772176056::0::1::::<>SceneTree<><>0<>1<><>::
 test_parse.gd::GDScript::5553060177986883779::1772674886::0::1::::<>SceneTree<><>0<>0<><>::
 ::res://assets/::1772166480
 ::res://assets/images/::1772674886
-::res://assets/images/logos/::1772705758
+::res://assets/images/logos/::1772705798
 logo_bears.png::CompressedTexture2D::8724989526740125374::1772705761::1772705797::1::::<><><>0<>0<>44a2e9d80ed15a09c74fb9f8a1381c7c<>res://.godot/imported/logo_bears.png-76583f54557d90c271d22057d82ef3f9.ctex::
 logo_bulls.png::CompressedTexture2D::1899335207494087563::1772705761::1772705797::1::::<><><>0<>0<>f2534515ff4fda75badc8acddf21df29<>res://.godot/imported/logo_bulls.png-4a3820cb776e6341f108eb8276e9a0fc.ctex::
 logo_cobras.png::CompressedTexture2D::3995159897007151922::1772705761::1772705797::1::::<><><>0<>0<>27940d0ec29b09012e72b4bce63ebb8a<>res://.godot/imported/logo_cobras.png-5d664ac45a0b22c505506b90d4d1d3f9.ctex::
@@ -79,7 +79,7 @@ player_data.gd::GDScript::4837513007165639240::1772679762::0::1::::PlayerData<>R
 team_data.gd::GDScript::2701327264289044270::1772674886::0::1::::TeamData<>Resource<><>0<>0<><>::
 ::res://scripts/managers/::1772674886
 court_themes.gd::GDScript::2165321389932810280::1772166066::0::1::::<>Node<><>0<>0<><>::
-league_manager.gd::GDScript::6700234064816807533::1772705470::0::1::::<>Node<><>0<>0<><>::
+league_manager.gd::GDScript::6700234064816807533::1772706021::0::1::::<>Node<><>0<>0<><>::
 ::res://ui/::1772697138
 hud.gd::GDScript::7879180799474872460::1772674886::0::1::::<>CanvasLayer<><>0<>0<><>::
 hud.tscn::PackedScene::-1::1772077813::0::1::::<><><>0<>0<><>::res://ui/hud.gd
@@ -97,7 +97,7 @@ save_picker_modal.gd::GDScript::4040799757380836941::1772674886::0::1::::<>Contr
 save_picker_modal.tscn::PackedScene::4541866751267324686::1772674886::0::1::::<><><>0<>0<><>::res://ui/save_picker_modal.gd
 season_hub.gd::GDScript::5960584665149477001::1772704852::0::1::::<>Control<><>0<>0<><>::
 season_hub.tscn::PackedScene::-1::1772072574::0::1::::<><><>0<>0<><>::res://ui/season_hub.gd
-season_setup.gd::GDScript::4263318280190365585::1772704712::0::1::::<>Control<><>0<>0<><>::
+season_setup.gd::GDScript::4263318280190365585::1772706038::0::1::::<>Control<><>0<>0<><>::
 season_setup.tscn::PackedScene::6985446635515662489::1772688994::0::1::::<><><>0<>0<><>::res://ui/season_setup.gd
 team_selection.gd::GDScript::3690261941497716309::1772173195::0::1::::<>Control<><>0<>0<><>::
 team_selection.tscn::PackedScene::-1::1772175679::0::1::::<><><>0<>0<><>::res://ui/team_selection.gd

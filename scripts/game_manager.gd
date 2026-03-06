@@ -214,6 +214,10 @@ func _spawn_team(team_data: Resource, team_idx: int, player_scene: PackedScene, 
 			"points": 0,
 			"2pt": 0,
 			"3pt": 0,
+			"fgm": 0,
+			"fga": 0,
+			"tpm": 0,
+			"tpa": 0,
 			"rebounds": 0,
 			"assists": 0,
 			"steals": 0,
@@ -243,6 +247,10 @@ func _find_teams() -> void:
 				"points": 0,
 				"2pt": 0,
 				"3pt": 0,
+				"fgm": 0,
+				"fga": 0,
+				"tpm": 0,
+				"tpa": 0,
 				"rebounds": 0,
 				"assists": 0,
 				"steals": 0,
@@ -606,8 +614,14 @@ func award_score(scoring_team: int, points: int, stop_game: bool = true) -> void
 		var shooter = ball.last_shooter
 		if "team_index" in shooter and "roster_index" in shooter:
 			record_stat(shooter.team_index, shooter.roster_index, "points", points)
+			# Count the make as both a field goal made AND an attempt
+			record_stat(shooter.team_index, shooter.roster_index, "fgm", 1)
+			record_stat(shooter.team_index, shooter.roster_index, "fga", 1)
+			
 			if points == 3:
 				record_stat(shooter.team_index, shooter.roster_index, "3pt", 1)
+				record_stat(shooter.team_index, shooter.roster_index, "tpm", 1)
+				record_stat(shooter.team_index, shooter.roster_index, "tpa", 1)
 			elif points == 2:
 				record_stat(shooter.team_index, shooter.roster_index, "2pt", 1)
 			

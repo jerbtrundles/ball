@@ -436,9 +436,15 @@ func do_shoot() -> void:
 	var to_hoop = target_hoop - global_position
 	var dist = to_hoop.length()
 	
-	# Rim center (offset toward center court from backboard)
-	var rim_z_offset = 0.6 if target_hoop.z < 0 else -0.6
-	var rim_center = target_hoop + Vector3(0, -0.1, rim_z_offset)
+	# Record attempt right away
+	var is_three = false
+	if game_mgr and game_mgr.has_method("is_three_pointer"):
+		is_three = game_mgr.is_three_pointer(global_position, 0 if target_hoop.z < 0 else 1)
+		
+	if game_mgr and game_mgr.has_method("record_stat"):
+		game_mgr.record_stat(team_index, roster_index, "fga", 1)
+		if is_three:
+			game_mgr.record_stat(team_index, roster_index, "tpa", 1)
 	
 	# Release the ball
 	var ball_ref = held_ball
@@ -453,12 +459,19 @@ func do_shoot() -> void:
 	if made_shot:
 		# === MADE SHOT — Perfect tween arc, bypasses physics ===
 		# Target slightly ABOVE the rim so ball drops down through it
+		var rim_z_offset = 0.6 if target_hoop.z < 0 else -0.6
+		var rim_center = target_hoop + Vector3(0, -0.1, rim_z_offset)
 		var above_rim = rim_center + Vector3(0, 0.5, 0)
 		# Determine which hoop team index this basket belongs to (0 = north/negative-Z, 1 = south/positive-Z)
 		var hoop_team = 0 if target_hoop.z < 0 else 1
 		_animate_perfect_shot(ball_ref, ball_ref.global_position, above_rim, dist, hoop_team)
 	else:
 		# === MISS — Physics-based launch toward rim with offset ===
+		
+		# Rim center need re-calc here since we removed it globally
+		var rim_z_offset = 0.6 if target_hoop.z < 0 else -0.6
+		var rim_center = target_hoop + Vector3(0, -0.1, rim_z_offset)
+		
 		var miss_offset = Vector3(randf_range(-1.5, 1.5), randf_range(-0.3, 0.5), randf_range(-1.0, 1.0))
 		var miss_target = rim_center + miss_offset
 		var launch_vel = _calc_launch_velocity(ball_ref.global_position, miss_target, dist)

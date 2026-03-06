@@ -19,6 +19,14 @@ class_name PlayerData
 @export var reb: int = 0
 @export var ast: int = 0
 @export var blk: int = 0
+@export var fgm: int = 0
+@export var fga: int = 0
+@export var tpm: int = 0
+@export var tpa: int = 0
+
+# History of stats for each game played. Each entry is a dictionary:
+# { "opponent": String, "pts": int, "reb": int, "ast": int, "blk": int, "is_win": bool }
+@export var game_log: Array = []
 
 func _init(p_name: String = "Unknown", p_cost: int = 100):
 	name = p_name
