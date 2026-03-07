@@ -4,6 +4,7 @@ signal menu_closed()
 
 @onready var title_name: Label = $CenterContainer/CardPanel/VBox/TitleBox/PlayerName
 @onready var title_ovr: Label = $CenterContainer/CardPanel/VBox/TitleBox/PlayerOVR
+@onready var portrait_rect: TextureRect = $CenterContainer/CardPanel/VBox/TitleBox/Portrait
 @onready var stats_grid: VBoxContainer = $CenterContainer/CardPanel/VBox/StatsGrid
 @onready var btn_close: Button = $CenterContainer/CardPanel/VBox/BtnClose
 
@@ -29,6 +30,12 @@ func setup(player: PlayerData, theme_color: Color = Color(0.3, 0.7, 0.9, 0.8)) -
 	title_name.text = player.name
 	var p_ovr = int(round((player.speed + player.shot + player.pass_skill + player.tackle + player.strength + player.aggression) / 6.0))
 	title_ovr.text = "%d OVR" % p_ovr
+	
+	if player.portrait:
+		portrait_rect.texture = player.portrait
+		portrait_rect.show()
+	else:
+		portrait_rect.hide()
 	
 	_build_stat_grid(player)
 	

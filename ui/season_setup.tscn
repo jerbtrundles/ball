@@ -20,185 +20,256 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.05, 0.05, 0.12, 1)
 
-[node name="MainHBox" type="HBoxContainer" parent="."]
+[node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 50.0
-offset_top = 50.0
-offset_right = -50.0
-offset_bottom = -50.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_constants/margin_left = 50
+theme_override_constants/margin_top = 160
+theme_override_constants/margin_right = 50
+theme_override_constants/margin_bottom = 120
+
+[node name="MainStack" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="MainHBox" type="HBoxContainer" parent="MarginContainer/MainStack"]
+layout_mode = 2
+size_flags_vertical = 3
 theme_override_constants/separation = 40
 alignment = 1
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MainHBox"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/MainStack/MainHBox"]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_stretch_ratio = 2.0
 theme_override_constants/separation = 15
 
-[node name="Title" type="Label" parent="MainHBox/VBoxContainer"]
+[node name="Title" type="Label" parent="MarginContainer/MainStack/MainHBox/VBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 48
 text = "NEW FRANCHISE"
 horizontal_alignment = 1
 
-[node name="Subtitle" type="Label" parent="MainHBox/VBoxContainer"]
+[node name="Subtitle" type="Label" parent="MarginContainer/MainStack/MainHBox/VBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 theme_override_colors/font_color = Color(0.6, 0.6, 0.7, 1)
 text = "Select your franchise"
 horizontal_alignment = 1
 
-[node name="HSeparator" type="HSeparator" parent="MainHBox/VBoxContainer"]
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/MainStack/MainHBox/VBoxContainer"]
 layout_mode = 2
 
-[node name="VBox_Team" type="VBoxContainer" parent="MainHBox/VBoxContainer"]
+[node name="VBox_Team" type="HBoxContainer" parent="MarginContainer/MainStack/MainHBox/VBoxContainer"]
 custom_minimum_size = Vector2(400, 380)
 layout_mode = 2
 size_flags_horizontal = 4
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="BtnLeft" type="Button" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 36
+text = "◄"
+flat = true
+
+[node name="VBox_TeamDetails" type="VBoxContainer" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 4
 alignment = 1
 
-[node name="BtnUp" type="Button" parent="MainHBox/VBoxContainer/VBox_Team"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 24
-text = "▲"
-flat = true
-
-[node name="LogoRect" type="TextureRect" parent="MainHBox/VBoxContainer/VBox_Team"]
+[node name="LogoRect" type="TextureRect" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team/VBox_TeamDetails"]
 custom_minimum_size = Vector2(250, 250)
 layout_mode = 2
 size_flags_vertical = 3
 expand_mode = 1
 stretch_mode = 5
 
-[node name="TeamName" type="Label" parent="MainHBox/VBoxContainer/VBox_Team"]
+[node name="TeamName" type="Label" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team/VBox_TeamDetails"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 28
 text = "Team A"
 horizontal_alignment = 1
 
-[node name="TeamRating" type="Label" parent="MainHBox/VBoxContainer/VBox_Team"]
+[node name="TeamRating" type="Label" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team/VBox_TeamDetails"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
 text = "OVR: 50"
 horizontal_alignment = 1
 
-[node name="BtnDown" type="Button" parent="MainHBox/VBoxContainer/VBox_Team"]
+[node name="BtnRight" type="Button" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
-text = "▼"
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 36
+text = "►"
 flat = true
 
-[node name="HSeparator2" type="HSeparator" parent="MainHBox/VBoxContainer"]
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/MainStack/MainHBox/VBoxContainer"]
 layout_mode = 2
 
-[node name="OptionsPanel" type="PanelContainer" parent="MainHBox/VBoxContainer"]
+[node name="OptionsPanel" type="PanelContainer" parent="MarginContainer/MainStack/MainHBox/VBoxContainer"]
 layout_mode = 2
 
-[node name="OptionsVBox" type="VBoxContainer" parent="MainHBox/VBoxContainer/OptionsPanel"]
+[node name="OptionsGrid" type="GridContainer" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel"]
 layout_mode = 2
-theme_override_constants/separation = 12
+size_flags_horizontal = 4
+theme_override_constants/h_separation = 60
+theme_override_constants/v_separation = 12
+columns = 2
 
-[node name="HBox_TeamSize" type="HBoxContainer" parent="MainHBox/VBoxContainer/OptionsPanel/OptionsVBox"]
+[node name="HBox_TeamSize" type="HBoxContainer" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid"]
 layout_mode = 2
 alignment = 1
 
-[node name="Label" type="Label" parent="MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize"]
-custom_minimum_size = Vector2(180, 0)
+[node name="Label" type="Label" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_TeamSize"]
+custom_minimum_size = Vector2(170, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "Team Size"
 horizontal_alignment = 2
 
-[node name="OptionButton" type="OptionButton" parent="MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize"]
-custom_minimum_size = Vector2(220, 0)
+[node name="OptionButton" type="OptionButton" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_TeamSize"]
+custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 
-[node name="HBox_Quarters" type="HBoxContainer" parent="MainHBox/VBoxContainer/OptionsPanel/OptionsVBox"]
+[node name="HBox_Quarters" type="HBoxContainer" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid"]
 layout_mode = 2
 alignment = 1
 
-[node name="Label" type="Label" parent="MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters"]
-custom_minimum_size = Vector2(180, 0)
+[node name="Label" type="Label" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_Quarters"]
+custom_minimum_size = Vector2(170, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "Quarter Length"
 horizontal_alignment = 2
 
-[node name="OptionButton" type="OptionButton" parent="MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters"]
-custom_minimum_size = Vector2(220, 0)
+[node name="OptionButton" type="OptionButton" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_Quarters"]
+custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 
-[node name="HBox_Items" type="HBoxContainer" parent="MainHBox/VBoxContainer/OptionsPanel/OptionsVBox"]
+[node name="HBox_LeagueSize" type="HBoxContainer" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid"]
 layout_mode = 2
 alignment = 1
 
-[node name="Label" type="Label" parent="MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items"]
-custom_minimum_size = Vector2(180, 0)
+[node name="Label" type="Label" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_LeagueSize"]
+custom_minimum_size = Vector2(170, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Teams per League"
+horizontal_alignment = 2
+
+[node name="OptLeagueSize" type="OptionButton" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_LeagueSize"]
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+
+[node name="HBox_GPO" type="HBoxContainer" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid"]
+layout_mode = 2
+alignment = 1
+
+[node name="Label" type="Label" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_GPO"]
+custom_minimum_size = Vector2(170, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Season Length"
+horizontal_alignment = 2
+
+[node name="OptGPO" type="OptionButton" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_GPO"]
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+
+[node name="HBox_Items" type="HBoxContainer" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid"]
+layout_mode = 2
+alignment = 1
+
+[node name="Label" type="Label" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_Items"]
+custom_minimum_size = Vector2(170, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "Items / Hazards"
 horizontal_alignment = 2
 
-[node name="BtnItems" type="Button" parent="MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items"]
-custom_minimum_size = Vector2(220, 0)
+[node name="BtnItems" type="Button" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_Items"]
+custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 text = "All Enabled ▸"
 
-[node name="HSeparator3" type="HSeparator" parent="MainHBox/VBoxContainer"]
+[node name="HSeparator3" type="HSeparator" parent="MarginContainer/MainStack/MainHBox/VBoxContainer"]
 layout_mode = 2
 
-[node name="BtnStart" type="Button" parent="MainHBox/VBoxContainer"]
+[node name="ActionHBox" type="HBoxContainer" parent="MarginContainer/MainStack/MainHBox/VBoxContainer"]
 layout_mode = 2
+theme_override_constants/separation = 20
+alignment = 1
+
+[node name="BtnBack" type="Button" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/ActionHBox"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "BACK"
+
+[node name="BtnStart" type="Button" parent="MarginContainer/MainStack/MainHBox/VBoxContainer/ActionHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 32
 text = "START SEASON 1"
 
-[node name="BtnBack" type="Button" parent="MainHBox/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 16
-text = "BACK"
-
-[node name="RosterFrame" type="PanelContainer" parent="MainHBox"]
+[node name="RosterFrame" type="PanelContainer" parent="MarginContainer/MainStack/MainHBox"]
 custom_minimum_size = Vector2(450, 0)
 layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="RosterVBox" type="VBoxContainer" parent="MainHBox/RosterFrame"]
+[node name="RosterVBox" type="VBoxContainer" parent="MarginContainer/MainStack/MainHBox/RosterFrame"]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="Header" type="Label" parent="MainHBox/RosterFrame/RosterVBox"]
+[node name="Header" type="Label" parent="MarginContainer/MainStack/MainHBox/RosterFrame/RosterVBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 28
 text = "TEAM ROSTER"
 horizontal_alignment = 1
 
-[node name="HSeparator" type="HSeparator" parent="MainHBox/RosterFrame/RosterVBox"]
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/MainStack/MainHBox/RosterFrame/RosterVBox"]
 layout_mode = 2
 
-[node name="ScrollContainer" type="ScrollContainer" parent="MainHBox/RosterFrame/RosterVBox"]
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/MainStack/MainHBox/RosterFrame/RosterVBox"]
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="PlayerList" type="VBoxContainer" parent="MainHBox/RosterFrame/RosterVBox/ScrollContainer"]
+[node name="PlayerList" type="VBoxContainer" parent="MarginContainer/MainStack/MainHBox/RosterFrame/RosterVBox/ScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="HSeparator2" type="HSeparator" parent="MainHBox/RosterFrame/RosterVBox"]
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/MainStack/MainHBox/RosterFrame/RosterVBox"]
 layout_mode = 2
 
-[node name="BtnResetTeam" type="Button" parent="MainHBox/RosterFrame/RosterVBox"]
+[node name="BtnResetTeam" type="Button" parent="MarginContainer/MainStack/MainHBox/RosterFrame/RosterVBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
 theme_override_colors/font_color = Color(0.9, 0.4, 0.4, 1)
 text = "🎲 REGENERATE TEAM"
+
+[node name="InfoPanel" type="PanelContainer" parent="MarginContainer/MainStack"]
+layout_mode = 2
+
+[node name="InfoLabel" type="Label" parent="MarginContainer/MainStack/InfoPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.8, 0.9, 1)
+theme_override_font_sizes/font_size = 13
+text = "You are starting a new franchise in the Bronze Tier (Lowest League).
+Compete well and win the post-season tournament to get PROMOTED to the Silver Tier!
+Be careful, finishing last means you could be RELEGATED to a lower division."
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="ItemsModal" type="PanelContainer" parent="."]
 visible = false

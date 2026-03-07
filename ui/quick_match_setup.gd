@@ -1,43 +1,43 @@
 extends Control
 
 # --- Team panels ---
-@onready var team_a_name: Label = $VBoxContainer/HBox_Teams/VBox_TeamA/TeamName
-@onready var team_a_rating: Label = $VBoxContainer/HBox_Teams/VBox_TeamA/TeamRating
-@onready var team_a_logo: TextureRect = $VBoxContainer/HBox_Teams/VBox_TeamA/LogoRect
-@onready var team_a_container: Control = $VBoxContainer/HBox_Teams/VBox_TeamA
-@onready var btn_a_up: Button = $VBoxContainer/HBox_Teams/VBox_TeamA/BtnUp
-@onready var btn_a_down: Button = $VBoxContainer/HBox_Teams/VBox_TeamA/BtnDown
+@onready var team_a_name: Label = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/TeamName
+@onready var team_a_rating: Label = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/TeamRating
+@onready var team_a_logo: TextureRect = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/LogoRect
+@onready var team_a_container: Control = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA
+@onready var btn_a_up: Button = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/BtnUp
+@onready var btn_a_down: Button = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/BtnDown
 
-@onready var team_b_name: Label = $VBoxContainer/HBox_Teams/VBox_TeamB/TeamName
-@onready var team_b_rating: Label = $VBoxContainer/HBox_Teams/VBox_TeamB/TeamRating
-@onready var team_b_logo: TextureRect = $VBoxContainer/HBox_Teams/VBox_TeamB/LogoRect
-@onready var team_b_container: Control = $VBoxContainer/HBox_Teams/VBox_TeamB
-@onready var btn_b_up: Button = $VBoxContainer/HBox_Teams/VBox_TeamB/BtnUp
-@onready var btn_b_down: Button = $VBoxContainer/HBox_Teams/VBox_TeamB/BtnDown
+@onready var team_b_name: Label = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/TeamName
+@onready var team_b_rating: Label = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/TeamRating
+@onready var team_b_logo: TextureRect = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/LogoRect
+@onready var team_b_container: Control = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB
+@onready var btn_b_up: Button = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/BtnUp
+@onready var btn_b_down: Button = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/BtnDown
 
-@onready var left_roster: VBoxContainer = $LeftMargin/LeftRoster
-@onready var right_roster: VBoxContainer = $RightMargin/RightRoster
+@onready var left_roster: VBoxContainer = $MarginContainer/LeftRoster
+@onready var right_roster: VBoxContainer = $MarginContainer/RightRoster
 
 # --- Side selector ---
-@onready var zone_a: PanelContainer = $VBoxContainer/SideSelector/ZoneA
-@onready var zone_spec: PanelContainer = $VBoxContainer/SideSelector/ZoneSpec
-@onready var zone_b: PanelContainer = $VBoxContainer/SideSelector/ZoneB
-@onready var zone_a_label: Label = $VBoxContainer/SideSelector/ZoneA/Label
-@onready var zone_spec_label: Label = $VBoxContainer/SideSelector/ZoneSpec/Label
-@onready var zone_b_label: Label = $VBoxContainer/SideSelector/ZoneB/Label
+@onready var zone_a: PanelContainer = $MarginContainer/VBoxContainer/SideSelector/ZoneA
+@onready var zone_spec: PanelContainer = $MarginContainer/VBoxContainer/SideSelector/ZoneSpec
+@onready var zone_b: PanelContainer = $MarginContainer/VBoxContainer/SideSelector/ZoneB
+@onready var zone_a_label: Label = $MarginContainer/VBoxContainer/SideSelector/ZoneA/Label
+@onready var zone_spec_label: Label = $MarginContainer/VBoxContainer/SideSelector/ZoneSpec/Label
+@onready var zone_b_label: Label = $MarginContainer/VBoxContainer/SideSelector/ZoneB/Label
 
 # --- Options ---
-@onready var opt_quarters: OptionButton = $VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters/OptionButton
-@onready var opt_team_size: OptionButton = $VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize/OptionButton
-@onready var btn_items: Button = $VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items/BtnItems
+@onready var opt_quarters: OptionButton = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters/OptionButton
+@onready var opt_team_size: OptionButton = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize/OptionButton
+@onready var btn_items: Button = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items/BtnItems
 
 # --- Court picker ---
-@onready var court_cards_container: HBoxContainer = $VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/CourtCardsContainer
-@onready var btn_court_prev: Button = $VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/BtnCourtPrev
-@onready var btn_court_next: Button = $VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/BtnCourtNext
+@onready var court_cards_container: HBoxContainer = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/CourtCardsContainer
+@onready var btn_court_prev: Button = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/BtnCourtPrev
+@onready var btn_court_next: Button = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/BtnCourtNext
 
-@onready var btn_start: Button = $VBoxContainer/BtnStart
-@onready var btn_back: Button = $VBoxContainer/BtnBack
+@onready var btn_start: Button = $MarginContainer/VBoxContainer/BtnStart
+@onready var btn_back: Button = $MarginContainer/VBoxContainer/BtnBack
 
 # --- Items modal ---
 @onready var items_modal: PanelContainer = $ItemsModal
@@ -399,18 +399,18 @@ void fragment() {
 	bg.material = shader_mat
 	
 	# Title
-	$VBoxContainer/Title.add_theme_color_override("font_color", Color(0.0, 0.9, 1.0))
-	$VBoxContainer/Title.add_theme_color_override("font_outline_color", Color(0.0, 0.4, 0.6))
-	$VBoxContainer/Title.add_theme_constant_override("outline_size", 4)
+	$MarginContainer/VBoxContainer/Title.add_theme_color_override("font_color", Color(0.0, 0.9, 1.0))
+	$MarginContainer/VBoxContainer/Title.add_theme_color_override("font_outline_color", Color(0.0, 0.4, 0.6))
+	$MarginContainer/VBoxContainer/Title.add_theme_constant_override("outline_size", 4)
 	
 	# VS
-	var vs = $VBoxContainer/HBox_Teams/VS_Label
+	var vs = $MarginContainer/VBoxContainer/HBox_Teams/VS_Label
 	vs.add_theme_color_override("font_color", Color(1.0, 0.5, 0.0))
 	vs.add_theme_color_override("font_outline_color", Color(0.5, 0.2, 0.0))
 	vs.add_theme_constant_override("outline_size", 5)
 	
 	# Headers
-	for p in ["VBoxContainer/HBox_Teams/VBox_TeamA/Label_Header","VBoxContainer/HBox_Teams/VBox_TeamB/Label_Header"]:
+	for p in ["MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/Label_Header","MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/Label_Header"]:
 		get_node(p).add_theme_color_override("font_color", Color(0.5, 0.5, 0.65))
 	
 	# Arrow buttons
@@ -422,10 +422,10 @@ void fragment() {
 		btn.focus_mode = Control.FOCUS_NONE
 	
 	# Options labels
-	for p in ["VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize/Label",
-			  "VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters/Label",
-			  "VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/Label",
-			  "VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items/Label"]:
+	for p in ["MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize/Label",
+			  "MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters/Label",
+			  "MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/Label",
+			  "MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items/Label"]:
 		get_node(p).add_theme_color_override("font_color", Color(0.7, 0.7, 0.85))
 	
 	# Start button
@@ -445,7 +445,7 @@ void fragment() {
 	panel_sb.set_border_width_all(1)
 	panel_sb.set_corner_radius_all(10)
 	panel_sb.set_content_margin_all(14)
-	$VBoxContainer/OptionsPanel.add_theme_stylebox_override("panel", panel_sb)
+	$MarginContainer/VBoxContainer/OptionsPanel.add_theme_stylebox_override("panel", panel_sb)
 	
 	# Items modal panel
 	var modal_sb = StyleBoxFlat.new()
@@ -819,6 +819,14 @@ func _build_roster_cards(team: Resource, container: VBoxContainer, max_size: int
 		
 		var header_hbox = HBoxContainer.new()
 		vbox.add_child(header_hbox)
+		
+		if p.portrait:
+			var pr = TextureRect.new()
+			pr.texture = p.portrait
+			pr.custom_minimum_size = Vector2(96, 96)
+			pr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			pr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			header_hbox.add_child(pr)
 		
 		var name_lbl = Label.new()
 		name_lbl.text = " #%d %s" % [p.number, p.name]

@@ -14,6 +14,7 @@ var stats_division_index: int = -1 # Filter for stats leaders, -1 = Player's div
 var stats_view_type: String = "individual" # "individual" or "team"
 var stats_sort_field: String = "pts"
 var stats_sort_asc: bool = false
+var standings_view_index: int = -1 # -1 = Player's Division, 0=Gold, 1=Silver, 2=Bronze
 
 func _process(delta: float) -> void:
 	if ticker_scroll_node and ticker_content:
@@ -38,6 +39,13 @@ func _build_ui() -> void:
 		# Fallback if accessed without a team
 		print("Warning: No player team selected for Season Hub.")
 		return
+	
+	# Initialize standings view to player's tier
+	var p_div = LeagueManager.get_player_division_name()
+	if p_div == "Gold": standings_view_index = 0
+	elif p_div == "Silver": standings_view_index = 1
+	elif p_div == "Bronze": standings_view_index = 2
+	else: standings_view_index = 0
 		
 	# 1. Update Background Color
 	var col = team.color_primary
@@ -61,8 +69,8 @@ func _build_ui() -> void:
 	var main_hbox = HBoxContainer.new()
 	main_hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	main_hbox.add_theme_constant_override("separation", 40)
-	main_hbox.set_begin(Vector2(50, 50))
-	main_hbox.set_end(Vector2(-50, -50))
+	main_hbox.set_begin(Vector2(50, 40))
+	main_hbox.set_end(Vector2(-50, -250))
 	add_child(main_hbox)
 	
 	# --- LEFT PANEL (Stats & Roster) ---
@@ -215,8 +223,9 @@ func _build_ui() -> void:
 	var logo_rect = TextureRect.new()
 	logo_rect.texture = team.logo
 	logo_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	logo_rect.custom_minimum_size = Vector2(300, 300)
+	logo_rect.custom_minimum_size = Vector2(180, 180)
 	logo_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	logo_rect.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	right_vbox.add_child(logo_rect)
 	
 	# Play Next Match Button
@@ -526,220 +535,198 @@ func _update_carousel_view() -> void:
 	slide_func.call()
 
 func _build_carousel_standings() -> void:
+	var vbox = VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 10)
+	carousel_content.add_child(vbox)
+	
+	# 1. STANDINGS SUB-TABS
+	var tab_hb = HBoxContainer.new()
+	tab_hb.alignment = BoxContainer.ALIGNMENT_CENTER
+	tab_hb.add_theme_constant_override("separation", 4)
+	vbox.add_child(tab_hb)
+	
+	var tab_names = ["GOLD", "SILVER", "BRONZE"]
+	var tier_colors = [
+		Color(1.0, 0.85, 0.1),  # Gold
+		Color(0.75, 0.85, 1.0), # Silver
+		Color(0.8, 0.5, 0.15)  # Bronze
+	]
+	
+	var player_div_name = LeagueManager.get_player_division_name()
+	
+	for i in range(tab_names.size()):
+		var t_name = tab_names[i]
+		var is_player_tier = (t_name.to_pascal_case() == player_div_name)
+		var display_text = t_name
+		if is_player_tier:
+			display_text = "★ " + t_name
+			
+		var btn = Button.new()
+		btn.text = display_text
+		btn.add_theme_font_size_override("font_size", 11)
+		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		
+		var is_active = (standings_view_index == i)
+		var accent_col = tier_colors[i]
+		
+		var sb = StyleBoxFlat.new()
+		if is_active:
+			sb.bg_color = Color(accent_col.r * 0.4, accent_col.g * 0.4, accent_col.b * 0.4, 0.6)
+			sb.border_color = accent_col
+			sb.set_border_width_all(1)
+		else:
+			sb.bg_color = Color(0.1, 0.1, 0.15, 0.4)
+			sb.border_color = Color(accent_col.r, accent_col.g, accent_col.b, 0.2)
+			sb.set_border_width(SIDE_BOTTOM, 2)
+			
+		sb.set_corner_radius_all(4)
+		sb.content_margin_left = 14; sb.content_margin_right = 14
+		sb.content_margin_top = 5; sb.content_margin_bottom = 5
+		btn.add_theme_stylebox_override("normal", sb)
+		btn.add_theme_color_override("font_color", Color.WHITE if is_active else Color(0.7, 0.7, 0.75))
+		
+		# Hover effect
+		var hsb = sb.duplicate()
+		hsb.bg_color.a += 0.2
+		btn.add_theme_stylebox_override("hover", hsb)
+		
+		var t_idx = i
+		btn.pressed.connect(func():
+			standings_view_index = t_idx
+			_update_carousel_view()
+		)
+		tab_hb.add_child(btn)
+	
+	# 2. Standings Header
+	var head_pnl = PanelContainer.new()
+	var h_sb = StyleBoxFlat.new()
+	h_sb.bg_color = Color(1,1,1, 0.03)
+	h_sb.content_margin_left = 12; h_sb.content_margin_right = 12
+	h_sb.content_margin_top = 4; h_sb.content_margin_bottom = 4
+	head_pnl.add_theme_stylebox_override("panel", h_sb)
+	vbox.add_child(head_pnl)
+	
+	var head_hb = HBoxContainer.new()
+	head_hb.add_theme_constant_override("separation", 4)
+	head_pnl.add_child(head_hb)
+	
+	var col_defs = [["RK",30],["TEAM",-1],["W",30],["L",30],["PCT",50]]
+	for cd in col_defs:
+		var hl = Label.new()
+		hl.text = cd[0]
+		if cd[1] > 0: hl.custom_minimum_size = Vector2(cd[1], 0)
+		else: hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
+		hl.add_theme_font_size_override("font_size", 11)
+		hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER if cd[1] > 0 else HORIZONTAL_ALIGNMENT_LEFT
+		head_hb.add_child(hl)
+	
+	# 3. Scrollable List
 	var scroller = ScrollContainer.new()
 	scroller.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-	carousel_content.add_child(scroller)
+	vbox.add_child(scroller)
 	
-	var mini_vbox = VBoxContainer.new()
-	mini_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mini_vbox.add_theme_constant_override("separation", 10)
-	scroller.add_child(mini_vbox)
+	var list_vbox = VBoxContainer.new()
+	list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list_vbox.add_theme_constant_override("separation", 1)
+	scroller.add_child(list_vbox)
 	
-	var len_lbl = Label.new()
-	len_lbl.text = "STANDINGS — %d GAME SEASON" % max(1, LeagueManager.schedule.size())
-	len_lbl.add_theme_font_size_override("font_size", 14)
-	len_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
-	len_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	mini_vbox.add_child(len_lbl)
-	
-	# Find which division the player is in
-	var player_div_name = LeagueManager.get_player_division_name()
-	
-	# Build display order: player's division first, then others in Gold → Silver → Bronze order
-	var div_display_order: Array = []
-	var player_div = null
-	for div in LeagueManager.divisions:
-		if div["name"] == player_div_name:
-			player_div = div
+	# Determine which division to show
+	var tier_name = ["Gold", "Silver", "Bronze"][clampi(standings_view_index, 0, 2)]
+	var target_div = null
+	for d in LeagueManager.divisions:
+		if d["name"] == tier_name:
+			target_div = d
 			break
-	if player_div:
-		div_display_order.append(player_div)
-	# Append remaining divisions in fixed tier order (skip player's own)
-	for tier_name in ["Gold", "Silver", "Bronze"]:
-		if tier_name == player_div_name:
-			continue
-		for div in LeagueManager.divisions:
-			if div["name"] == tier_name:
-				div_display_order.append(div)
-				break
-	
-	var div_header_colors = {
-		"Gold":   Color(1.0,  0.85, 0.1),
-		"Silver": Color(0.75, 0.85, 1.0),
-		"Bronze": Color(0.8,  0.5,  0.15)
-	}
-	var div_icons = {"Gold": "🥇", "Silver": "🥈", "Bronze": "🥉"}
-	
-	for div in div_display_order:
-		var div_name = div["name"]
-		var div_col  = div_header_colors.get(div_name, Color(0.6, 0.6, 0.7))
-		var div_icon = div_icons.get(div_name, "")
+				
+	if target_div:
+		var div_name = target_div["name"]
+		var div_col  = tier_colors[standings_view_index]
 		
-		# --- Division header ---
-		var is_player_div = (div_name == player_div_name)
-		var dh_pnl = PanelContainer.new()
-		var dh_sb  = StyleBoxFlat.new()
-		var dh_bg_mul = 0.25 if is_player_div else 0.15
-		dh_sb.bg_color    = Color(div_col.r * dh_bg_mul, div_col.g * dh_bg_mul, div_col.b * dh_bg_mul, 0.95)
-		dh_sb.border_color = div_col
-		dh_sb.set_border_width(SIDE_LEFT, 6 if is_player_div else 4)
-		dh_sb.set_border_width(SIDE_BOTTOM, 1)
-		dh_sb.set_corner_radius_all(4)
-		dh_sb.content_margin_left = 12; dh_sb.content_margin_right = 12
-		dh_sb.content_margin_top  = 8 if is_player_div else 6
-		dh_sb.content_margin_bottom = 8 if is_player_div else 6
-		dh_pnl.add_theme_stylebox_override("panel", dh_sb)
-		mini_vbox.add_child(dh_pnl)
+		# Division Label (above teams)
+		var div_lbl = Label.new()
+		div_lbl.text = div_name.to_upper() + " DIVISION"
+		div_lbl.add_theme_font_size_override("font_size", 11)
+		div_lbl.add_theme_color_override("font_color", div_col.darkened(0.2))
+		div_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		list_vbox.add_child(div_lbl)
+
+		# Teams
+		var teams_list = target_div["teams"].duplicate()
+		teams_list.sort_custom(func(a, b):
+			if a.wins != b.wins: return a.wins > b.wins
+			return a.losses < b.losses
+		)
 		
-		var dh_hb = HBoxContainer.new()
-		dh_pnl.add_child(dh_hb)
-		
-		var dh_lbl = Label.new()
-		dh_lbl.text = "%s %s DIVISION" % [div_icon, div_name.to_upper()]
-		dh_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		dh_lbl.add_theme_font_size_override("font_size", 18 if is_player_div else 16)
-		dh_lbl.add_theme_color_override("font_color", div_col)
-		dh_hb.add_child(dh_lbl)
-		
-		if is_player_div:
-			var you_lbl = Label.new()
-			you_lbl.text = "◀ YOUR DIVISION"
-			you_lbl.add_theme_font_size_override("font_size", 13)
-			you_lbl.add_theme_color_override("font_color", div_col.lightened(0.3))
-			you_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			dh_hb.add_child(you_lbl)
-		
-		# Column headers
-		var head_hb = HBoxContainer.new()
-		head_hb.add_theme_constant_override("separation", 4)
-		var col_defs = [["RK",30],["TEAM",-1],["W-L",55],["PCT",50],["PF",45],["PA",45],["+/-",40],["STRK",40]]
-		for cd in col_defs:
-			var hl = Label.new()
-			hl.text = cd[0]
-			if cd[1] > 0: hl.custom_minimum_size = Vector2(cd[1], 0)
-			else: hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			hl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
-			hl.add_theme_font_size_override("font_size", 12)
-			head_hb.add_child(hl)
-		var h_margin = MarginContainer.new()
-		h_margin.add_theme_constant_override("margin_left", 12)
-		h_margin.add_theme_constant_override("margin_right", 12)
-		h_margin.add_child(head_hb)
-		mini_vbox.add_child(h_margin)
-		
-		# Sort teams within this division
-		var div_teams = div["teams"].duplicate()
-		div_teams.sort_custom(func(a,b): return a.wins > b.wins)
-		var n = div_teams.size()
-		
-		for i in range(n):
-			var t = div_teams[i]
+		for i in range(teams_list.size()):
+			var t = teams_list[i]
 			var is_player = (t == LeagueManager.player_team)
-			var is_promo  = (i == 0 and div_name != "Gold")   # Top of non-Gold = promo zone
-			var is_relgt  = (i == n - 1 and div_name != "Bronze") # Bottom of non-Bronze = relegate zone
 			
-			var row_bg = PanelContainer.new()
-			var r_sb   = StyleBoxFlat.new()
-			r_sb.bg_color = Color(0.12, 0.12, 0.18, 0.9) if i % 2 == 0 else Color(0.15, 0.15, 0.22, 0.9)
+			var row_pnl = PanelContainer.new()
+			var rsb = StyleBoxFlat.new()
 			if is_player:
-				r_sb.bg_color    = Color(0.05, 0.20, 0.30, 0.95)
-				r_sb.border_color = Color(0.0,  0.9,  1.0,  0.9)
-				r_sb.set_border_width_all(2)
-				r_sb.set_border_width(SIDE_LEFT, 5)
-			elif is_promo:
-				r_sb.border_color = Color(0.2, 0.9, 0.2, 0.5)
-				r_sb.set_border_width(SIDE_LEFT, 3)
-			elif is_relgt:
-				r_sb.border_color = Color(0.9, 0.2, 0.2, 0.5)
-				r_sb.set_border_width(SIDE_LEFT, 3)
-			r_sb.set_corner_radius_all(4)
-			r_sb.content_margin_left = 12; r_sb.content_margin_right = 12
-			r_sb.content_margin_top  = 10 if is_player else 7
-			r_sb.content_margin_bottom = 10 if is_player else 7
-			row_bg.add_theme_stylebox_override("panel", r_sb)
+				rsb.bg_color = Color(0, 0.4, 1.0, 0.25)
+				rsb.border_color = Color(0, 0.9, 1.0, 0.5)
+				rsb.set_border_width(SIDE_LEFT, 4)
+			else:
+				rsb.bg_color = Color(1, 1, 1, 0.05) if i % 2 == 1 else Color(0, 0, 0, 0)
+			
+			rsb.content_margin_left = 12; rsb.content_margin_right = 12
+			rsb.content_margin_top = 6; rsb.content_margin_bottom = 6
+			row_pnl.add_theme_stylebox_override("panel", rsb)
+			list_vbox.add_child(row_pnl)
 			
 			var hb = HBoxContainer.new()
 			hb.add_theme_constant_override("separation", 4)
-			row_bg.add_child(hb)
+			row_pnl.add_child(hb)
 			
 			var rank = Label.new()
-			rank.text = str(i + 1) + "."
+			rank.text = str(i+1)
 			rank.custom_minimum_size = Vector2(30, 0)
-			rank.add_theme_color_override("font_color", Color(0.0, 0.85, 1.0) if is_player else Color(0.6, 0.6, 0.7))
-			rank.add_theme_font_size_override("font_size", 16 if is_player else 14)
+			rank.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			rank.add_theme_font_size_override("font_size", 13)
+			rank.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
 			hb.add_child(rank)
 			
-			var nam = Label.new()
-			nam.text = t.name
-			nam.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			nam.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-			if is_player:
-				nam.add_theme_color_override("font_color", Color(0.0, 0.95, 1.0))
-				nam.add_theme_font_size_override("font_size", 16)
-			if is_promo:  nam.add_theme_color_override("font_color", Color(0.4, 1.0, 0.4))
-			if is_relgt:  nam.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
-			hb.add_child(nam)
+			var t_name_lbl = Label.new()
+			t_name_lbl.text = t.name.to_upper()
+			t_name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			t_name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			t_name_lbl.add_theme_font_size_override("font_size", 14)
+			var base_col = t.color_primary.lightened(0.2) if is_player else Color(0.85, 0.85, 0.9)
+			t_name_lbl.add_theme_color_override("font_color", base_col)
+			hb.add_child(t_name_lbl)
 			
-			# Zone indicator appended to name
-			if is_promo and not is_player:
-				var zone = Label.new()
-				zone.text = " ↑"
-				zone.add_theme_color_override("font_color", Color(0.3, 1.0, 0.3))
-				zone.add_theme_font_size_override("font_size", 14)
-				hb.add_child(zone)
-			elif is_relgt and not is_player:
-				var zone = Label.new()
-				zone.text = " ↓"
-				zone.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
-				zone.add_theme_font_size_override("font_size", 14)
-				hb.add_child(zone)
+			var w_lbl = Label.new()
+			w_lbl.text = str(t.wins)
+			w_lbl.custom_minimum_size = Vector2(30, 0)
+			w_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			w_lbl.add_theme_font_size_override("font_size", 13)
+			w_lbl.add_theme_color_override("font_color", Color(0.1, 1.0, 0.2) if t.wins > t.losses else Color(0.8, 0.8, 0.8))
+			hb.add_child(w_lbl)
 			
-			var wl = Label.new()
-			wl.text = "%d-%d" % [t.wins, t.losses]
-			wl.custom_minimum_size = Vector2(55, 0)
-			wl.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95))
-			hb.add_child(wl)
+			var l_lbl = Label.new()
+			l_lbl.text = str(t.losses)
+			l_lbl.custom_minimum_size = Vector2(30, 0)
+			l_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			l_lbl.add_theme_font_size_override("font_size", 13)
+			l_lbl.add_theme_color_override("font_color", Color(1.0, 0.2, 0.1) if t.losses > t.wins else Color(0.7, 0.7, 0.7))
+			hb.add_child(l_lbl)
 			
 			var pct_lbl = Label.new()
 			var pct = float(t.wins) / float(max(1, t.wins + t.losses))
-			if t.wins + t.losses == 0: pct = 0.0
 			var pct_str = "%.3f" % pct
 			if pct_str.begins_with("0."): pct_str = pct_str.substr(1)
+			if pct >= 1.0: pct_str = "1.000"
 			pct_lbl.text = pct_str
 			pct_lbl.custom_minimum_size = Vector2(50, 0)
-			pct_lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+			pct_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			pct_lbl.add_theme_font_size_override("font_size", 12)
+			pct_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 			hb.add_child(pct_lbl)
-			
-			var pf = Label.new()
-			pf.text = str(t.pf)
-			pf.custom_minimum_size = Vector2(45, 0)
-			pf.add_theme_color_override("font_color", Color(0.7, 0.9, 0.7))
-			hb.add_child(pf)
-			
-			var pa = Label.new()
-			pa.text = str(t.pa)
-			pa.custom_minimum_size = Vector2(45, 0)
-			pa.add_theme_color_override("font_color", Color(0.9, 0.7, 0.7))
-			hb.add_child(pa)
-			
-			var diff = Label.new()
-			var p_diff = t.pf - t.pa
-			diff.text = ("+" if p_diff > 0 else "") + str(p_diff)
-			diff.custom_minimum_size = Vector2(40, 0)
-			diff.add_theme_color_override("font_color", Color(0.8, 0.8, 0.85))
-			hb.add_child(diff)
-			
-			var strk = Label.new()
-			var s_val = t.streak
-			if s_val > 0:  strk.text = "W" + str(s_val)
-			elif s_val < 0: strk.text = "L" + str(abs(s_val))
-			else: strk.text = "-"
-			strk.custom_minimum_size = Vector2(40, 0)
-			strk.add_theme_color_override("font_color", Color(0.6, 0.9, 0.6) if s_val > 0 else Color(0.9, 0.6, 0.6) if s_val < 0 else Color(0.8, 0.8, 0.8))
-			hb.add_child(strk)
-			
-			mini_vbox.add_child(row_bg)
 
 func _show_season_stats_modal() -> void:
 	if stats_division_index == -1:
@@ -1132,6 +1119,14 @@ func _create_player_row(p: Resource, t: Resource = null) -> Control:
 	num_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	header_hbox.add_child(num_lbl)
 	
+	if "portrait" in p and p.portrait:
+		var pr = TextureRect.new()
+		pr.texture = p.portrait
+		pr.custom_minimum_size = Vector2(96, 96)
+		pr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		header_hbox.add_child(pr)
+		
 	var n_lbl = Label.new()
 	n_lbl.text = p.name
 	n_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL

@@ -1,20 +1,23 @@
 extends Control
 
-@onready var team_name: Label = $MainHBox/VBoxContainer/VBox_Team/TeamName
-@onready var team_rating: Label = $MainHBox/VBoxContainer/VBox_Team/TeamRating
-@onready var team_logo: TextureRect = $MainHBox/VBoxContainer/VBox_Team/LogoRect
-@onready var team_container: Control = $MainHBox/VBoxContainer/VBox_Team
-@onready var btn_up: Button = $MainHBox/VBoxContainer/VBox_Team/BtnUp
-@onready var btn_down: Button = $MainHBox/VBoxContainer/VBox_Team/BtnDown
+@onready var team_name: Label = $MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team/VBox_TeamDetails/TeamName
+@onready var team_rating: Label = $MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team/VBox_TeamDetails/TeamRating
+@onready var team_logo: TextureRect = $MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team/VBox_TeamDetails/LogoRect
+@onready var team_container: Control = $MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team
+@onready var btn_left: Button = $MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team/BtnLeft
+@onready var btn_right: Button = $MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team/BtnRight
 
-@onready var opt_quarters: OptionButton = $MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters/OptionButton
-@onready var opt_team_size: OptionButton = $MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize/OptionButton
-@onready var btn_items: Button = $MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items/BtnItems
+@onready var opt_quarters: OptionButton = $MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_Quarters/OptionButton
+@onready var opt_team_size: OptionButton = $MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_TeamSize/OptionButton
+@onready var opt_lsize: OptionButton = $MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_LeagueSize/OptLeagueSize
+@onready var opt_gpo: OptionButton = $MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_GPO/OptGPO
+@onready var btn_items: Button = $MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_Items/BtnItems
 
-@onready var btn_start: Button = $MainHBox/VBoxContainer/BtnStart
-@onready var btn_back: Button = $MainHBox/VBoxContainer/BtnBack
+@onready var btn_start: Button = $MarginContainer/MainStack/MainHBox/VBoxContainer/ActionHBox/BtnStart
+@onready var btn_back: Button = $MarginContainer/MainStack/MainHBox/VBoxContainer/ActionHBox/BtnBack
+@onready var info_panel: PanelContainer = $MarginContainer/MainStack/InfoPanel
 
-@onready var roster_list: VBoxContainer = $MainHBox/RosterFrame/RosterVBox/ScrollContainer/PlayerList
+@onready var roster_list: VBoxContainer = $MarginContainer/MainStack/MainHBox/RosterFrame/RosterVBox/ScrollContainer/PlayerList
 
 # --- Items modal ---
 @onready var items_modal: PanelContainer = $ItemsModal
@@ -74,40 +77,9 @@ func _ready() -> void:
 	opt_team_size.add_item("5v5", 5)
 	opt_team_size.select(0)
 	
-	# Dynamically insert League Size
-	var h_lsize = HBoxContainer.new()
-	h_lsize.alignment = BoxContainer.ALIGNMENT_CENTER
-	var lslbl = Label.new()
-	lslbl.custom_minimum_size = Vector2(180, 0)
-	lslbl.text = "Teams per League"
-	lslbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	lslbl.add_theme_font_size_override("font_size", 18)
-	var opt_lsize = OptionButton.new()
-	opt_lsize.name = "OptLeagueSize"
-	opt_lsize.custom_minimum_size = Vector2(220, 0)
 	for n in range(4, 13):
 		opt_lsize.add_item("%d Teams" % n, n)
 	opt_lsize.select(4) # Default 8 Teams (index 4 in 4..12)
-	h_lsize.add_child(lslbl)
-	h_lsize.add_child(opt_lsize)
-	$MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.add_child(h_lsize)
-	$MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.move_child(h_lsize, 2)
-	
-	# Dynamically insert Season Length
-	var h_gpo = HBoxContainer.new()
-	h_gpo.alignment = BoxContainer.ALIGNMENT_CENTER
-	var lbl = Label.new()
-	lbl.custom_minimum_size = Vector2(180, 0)
-	lbl.text = "Season Length"
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	lbl.add_theme_font_size_override("font_size", 18)
-	var opt_gpo = OptionButton.new()
-	opt_gpo.name = "OptGPO"
-	opt_gpo.custom_minimum_size = Vector2(220, 0)
-	h_gpo.add_child(lbl)
-	h_gpo.add_child(opt_gpo)
-	$MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.add_child(h_gpo)
-	$MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.move_child(h_gpo, 3)
 	
 	opt_lsize.item_selected.connect(func(_idx): _update_season_length_options())
 	_update_season_length_options()
@@ -115,8 +87,8 @@ func _ready() -> void:
 	# Connect interaction
 	btn_start.pressed.connect(_on_start_pressed)
 	btn_back.pressed.connect(_on_back_pressed)
-	btn_up.pressed.connect(func(): _cycle_team(-1))
-	btn_down.pressed.connect(func(): _cycle_team(1))
+	btn_left.pressed.connect(func(): _cycle_team(-1))
+	btn_right.pressed.connect(func(): _cycle_team(1))
 	opt_team_size.item_selected.connect(_on_team_size_changed)
 	
 	# Color swatch — insert below team picker (above OptionsPanel)
@@ -124,8 +96,8 @@ func _ready() -> void:
 	swatch_hbox.name = "SwatchRow"
 	swatch_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	swatch_hbox.add_theme_constant_override("separation", 8)
-	$MainHBox/VBoxContainer.add_child(swatch_hbox)
-	$MainHBox/VBoxContainer.move_child(swatch_hbox, $MainHBox/VBoxContainer/VBox_Team.get_index() + 1)
+	team_container.get_parent().add_child(swatch_hbox)
+	team_container.get_parent().move_child(swatch_hbox, team_container.get_index() + 1)
 	
 	var swatch_label = Label.new()
 	swatch_label.text = "Team Color:"
@@ -145,8 +117,7 @@ func _ready() -> void:
 		_color_swatch_buttons.append(btn)
 	_apply_swatch_styles()
 	
-	# Info Panel explaining bottom league & promo/relegation
-	var info_pnl = PanelContainer.new()
+	# Info Panel explaining bottom league & promo/relegation styling
 	var i_sb = StyleBoxFlat.new()
 	i_sb.bg_color = Color(0.1, 0.1, 0.15, 0.7)
 	i_sb.border_color = Color(0.0, 0.9, 1.0, 0.4)
@@ -154,17 +125,7 @@ func _ready() -> void:
 	i_sb.set_corner_radius_all(6)
 	i_sb.content_margin_left = 15; i_sb.content_margin_right = 15
 	i_sb.content_margin_top = 10; i_sb.content_margin_bottom = 10
-	info_pnl.add_theme_stylebox_override("panel", i_sb)
-	$MainHBox/VBoxContainer.add_child(info_pnl)
-	$MainHBox/VBoxContainer.move_child(info_pnl, $MainHBox/VBoxContainer.get_child_count() - 3) # Above Start Button
-	
-	var info_lbl = Label.new()
-	info_lbl.text = "You are starting a new franchise in the Bronze Tier (Lowest League).\nCompete well and win the post-season tournament to get PROMOTED to the Silver Tier!\nBe careful, finishing last means you could be RELEGATED to a lower division."
-	info_lbl.add_theme_font_size_override("font_size", 13)
-	info_lbl.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9))
-	info_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	info_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	info_pnl.add_child(info_lbl)
+	info_panel.add_theme_stylebox_override("panel", i_sb)
 	
 	# Items Modal Binding
 	btn_items.pressed.connect(_open_items_modal)
@@ -176,7 +137,7 @@ func _ready() -> void:
 	chk_coin.pressed.connect(_update_items_button_text)
 	chk_crowd.pressed.connect(_update_items_button_text)
 	
-	var btn_reset = $MainHBox/RosterFrame/RosterVBox/BtnResetTeam
+	var btn_reset = $MarginContainer/MainStack/MainHBox/RosterFrame/RosterVBox/BtnResetTeam
 	btn_reset.pressed.connect(_on_reset_pressed)
 	
 	# Keyboard / Gamepad binding
@@ -289,7 +250,7 @@ func _update_ui() -> void:
 	team_rating.add_theme_color_override("font_color", chosen.lightened(0.2))
 	team_logo.texture = t.logo
 	
-	for btn in [btn_up, btn_down]:
+	for btn in [btn_left, btn_right]:
 		btn.add_theme_color_override("font_color", chosen.darkened(0.3))
 		btn.add_theme_color_override("font_hover_color", chosen.lightened(0.2))
 		
@@ -329,8 +290,17 @@ func _update_ui() -> void:
 		pnl.add_child(pvbox)
 		
 		var header_hbox = HBoxContainer.new()
+		header_hbox.add_theme_constant_override("separation", 20)
 		pvbox.add_child(header_hbox)
 		
+		if p.portrait:
+			var pr = TextureRect.new()
+			pr.texture = p.portrait
+			pr.custom_minimum_size = Vector2(96, 96)
+			pr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			pr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			header_hbox.add_child(pr)
+			
 		var num_lbl = Label.new()
 		num_lbl.text = "#%d " % p.number
 		num_lbl.add_theme_font_size_override("font_size", 18)
@@ -342,12 +312,26 @@ func _update_ui() -> void:
 		name_lbl.placeholder_text = "Player Name"
 		name_lbl.max_length = 20
 		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		name_lbl.add_theme_font_size_override("font_size", 18)
-		var sb_line_n = StyleBoxEmpty.new()
+		
+		var sb_line_n = StyleBoxFlat.new()
+		sb_line_n.bg_color = Color(0, 0, 0, 0)
+		sb_line_n.border_color = Color(0, 0, 0, 0)
+		sb_line_n.content_margin_left = 12
+		sb_line_n.content_margin_right = 12
+		sb_line_n.content_margin_top = 4
+		sb_line_n.content_margin_bottom = 4
+		
 		var sb_line_f = StyleBoxFlat.new()
 		sb_line_f.bg_color = Color(0.1, 0.1, 0.15, 0.8)
 		sb_line_f.border_color = t.color_primary
 		sb_line_f.set_border_width_all(1)
+		sb_line_f.content_margin_left = 12
+		sb_line_f.content_margin_right = 12
+		sb_line_f.content_margin_top = 4
+		sb_line_f.content_margin_bottom = 4
+		
 		name_lbl.add_theme_stylebox_override("normal", sb_line_n)
 		name_lbl.add_theme_stylebox_override("focus", sb_line_f)
 		name_lbl.text_changed.connect(func(new_text): p.name = new_text)
@@ -388,7 +372,7 @@ func _update_ui() -> void:
 			
 			var s_lbl = Label.new()
 			s_lbl.text = stats_labels[j]
-			s_lbl.add_theme_font_size_override("font_size", 12)
+			s_lbl.add_theme_font_size_override("font_size", 16)
 			s_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 			s_vbox.add_child(s_lbl)
 			
@@ -401,7 +385,7 @@ func _update_ui() -> void:
 			bar.max_value = 100
 			bar.value = s_val
 			bar.show_percentage = false
-			bar.custom_minimum_size = Vector2(0, 10)
+			bar.custom_minimum_size = Vector2(0, 14)
 			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			
@@ -426,9 +410,9 @@ func _update_ui() -> void:
 			
 			var v_lbl = Label.new()
 			v_lbl.text = str(int(s_val))
-			v_lbl.custom_minimum_size = Vector2(22, 0)
+			v_lbl.custom_minimum_size = Vector2(24, 0)
 			v_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-			v_lbl.add_theme_font_size_override("font_size", 12)
+			v_lbl.add_theme_font_size_override("font_size", 15)
 			v_lbl.add_theme_color_override("font_color", c)
 			bar_hbox.add_child(v_lbl)
 			
@@ -517,10 +501,8 @@ func _update_items_button_text() -> void:
 	else: btn_items.text = "%d / %d Enabled ▸" % [enabled_count, items.size()]
 
 func _update_season_length_options() -> void:
-	var opt_gpo = $MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.find_child("OptGPO", true, false) as OptionButton
 	if not opt_gpo: return
 	
-	var opt_lsize = $MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.find_child("OptLeagueSize", true, false) as OptionButton
 	var league_size = 8
 	if opt_lsize and opt_lsize.get_selected_id() > 0:
 		league_size = opt_lsize.get_selected_id()
@@ -555,11 +537,9 @@ func _on_start_pressed() -> void:
 	for v in enabled_items.values():
 		if v: any_items = true; break
 		
-	var opt_gpo = $MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.find_child("OptGPO", true, false) as OptionButton
 	var gpo = 1
 	if opt_gpo: gpo = opt_gpo.get_selected_id()
 	
-	var opt_lsize = $MainHBox/VBoxContainer/OptionsPanel/OptionsVBox.find_child("OptLeagueSize", true, false) as OptionButton
 	var l_size = 8
 	if opt_lsize and opt_lsize.get_selected_id() > 0: l_size = opt_lsize.get_selected_id()
 	
@@ -603,12 +583,12 @@ void fragment() {
 	shader_mat.shader = shader
 	bg.material = shader_mat
 	
-	$MainHBox/VBoxContainer/Title.add_theme_color_override("font_color", Color(0.0, 0.9, 1.0))
-	$MainHBox/VBoxContainer/Title.add_theme_color_override("font_outline_color", Color(0.0, 0.4, 0.6))
-	$MainHBox/VBoxContainer/Title.add_theme_constant_override("outline_size", 4)
+	$MarginContainer/MainStack/MainHBox/VBoxContainer/Title.add_theme_color_override("font_color", Color(0.0, 0.9, 1.0))
+	$MarginContainer/MainStack/MainHBox/VBoxContainer/Title.add_theme_color_override("font_outline_color", Color(0.0, 0.4, 0.6))
+	$MarginContainer/MainStack/MainHBox/VBoxContainer/Title.add_theme_constant_override("outline_size", 4)
 	
 	var arrow_dim = Color(0.45, 0.45, 0.6)
-	for btn in [btn_up, btn_down]:
+	for btn in [btn_left, btn_right]:
 		btn.add_theme_color_override("font_color", arrow_dim)
 		btn.add_theme_color_override("font_hover_color", Color(0.7, 0.7, 0.9))
 		btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
@@ -625,7 +605,7 @@ void fragment() {
 	panel_sb.set_border_width_all(1)
 	panel_sb.set_corner_radius_all(10)
 	panel_sb.set_content_margin_all(20)
-	$MainHBox/VBoxContainer/OptionsPanel.add_theme_stylebox_override("panel", panel_sb)
+	$MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel.add_theme_stylebox_override("panel", panel_sb)
 	
 	var modal_sb = StyleBoxFlat.new()
 	modal_sb.bg_color = Color(0.06, 0.06, 0.14, 0.95)

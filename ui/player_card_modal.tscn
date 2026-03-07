@@ -29,6 +29,13 @@ theme_override_constants/separation = 15
 layout_mode = 2
 alignment = 1
 
+[node name="Portrait" type="TextureRect" parent="CenterContainer/CardPanel/VBox/TitleBox"]
+custom_minimum_size = Vector2(256, 256)
+layout_mode = 2
+size_flags_horizontal = 4
+expand_mode = 1
+stretch_mode = 5
+
 [node name="PlayerName" type="Label" parent="CenterContainer/CardPanel/VBox/TitleBox"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 1, 1)

@@ -6,14 +6,22 @@ extends Control
 
 @onready var btn_resume: Button = $MenuContainer/BtnResume
 @onready var btn_stats: Button = $MenuContainer/BtnStats
+@onready var btn_return_hub: Button = $MenuContainer/BtnReturnHub
 @onready var btn_quit: Button = $MenuContainer/BtnQuit
 @onready var btn_close_stats: Button = $StatsPanel/VBox/BtnCloseStats
 
 func _ready() -> void:
 	btn_resume.pressed.connect(_on_resume_pressed)
 	btn_stats.pressed.connect(_on_stats_pressed)
+	btn_return_hub.pressed.connect(_on_return_hub_pressed)
 	btn_quit.pressed.connect(_on_quit_pressed)
 	btn_close_stats.pressed.connect(_on_close_stats_pressed)
+	
+	# Only show return to hub button if it's a season game
+	btn_return_hub.hide()
+	var gm = get_tree().get_first_node_in_group("game_manager")
+	if gm and gm.get("is_season_game"):
+		btn_return_hub.show()
 	
 	stats_panel.hide()
 	menu_container.show()
@@ -42,6 +50,11 @@ func _on_quit_pressed() -> void:
 		# If we came from quick match
 		pass
 	get_tree().change_scene_to_file("res://ui/main_menu.tscn")
+
+func _on_return_hub_pressed() -> void:
+	get_tree().paused = false
+	# We transition back to hub without recording result
+	get_tree().change_scene_to_file("res://ui/season_hub.tscn")
 
 func _on_stats_pressed() -> void:
 	_populate_stats()

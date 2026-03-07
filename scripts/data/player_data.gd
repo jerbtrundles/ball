@@ -5,6 +5,35 @@ class_name PlayerData
 @export var number: int = 0
 @export var cost: int = 100
 @export var face_seed: int = 0  # For procedural face generation
+@export var portrait: Texture2D
+
+static var _portrait_files = [
+	"portrait_agile_1772877045266.png",
+	"portrait_bruiser_1772877032269.png",
+	"portrait_mutant_1772877102515.png",
+	"portrait_mystic_1772877055763.png",
+	"portrait_ninja_1772877090950.png",
+	"portrait_punk_1772877021304.png",
+	"portrait_scavenger_1772877115262.png",
+	"portrait_veteran_1772877077685.png",
+	"portrait_snes_cyborg_1772878133252.png",
+	"portrait_snes_scavenger_1772878147340.png",
+	"portrait_snes_punk_1772878160692.png",
+	"portrait_snes_bruiser_1772878174526.png",
+	"portrait_snes_mutant_1772878187681.png",
+	"portrait_snes_veteran_1772878201019.png",
+	"portrait_snes_tech_1772878211447.png",
+	"portrait_snes_gasmask_1772878223770.png"
+]
+static var _portrait_pool: Array[Texture2D] = []
+
+static func _load_portraits():
+	if _portrait_pool.size() > 0:
+		return
+	for f in _portrait_files:
+		var tex = load("res://assets/portraits/" + f) as Texture2D
+		if tex:
+			_portrait_pool.append(tex)
 
 # Stats (0-10 or 0-100 scale)
 @export var speed: float = 5.0
@@ -32,6 +61,9 @@ func _init(p_name: String = "Unknown", p_cost: int = 100):
 	name = p_name
 	cost = p_cost
 	face_seed = randi()
+	PlayerData._load_portraits()
+	if PlayerData._portrait_pool.size() > 0:
+		portrait = PlayerData._portrait_pool[randi() % PlayerData._portrait_pool.size()]
 
 func randomize_stats(tier: int = 1):
 	# Tier 1 (Bronze): 40 base
