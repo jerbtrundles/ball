@@ -23,7 +23,24 @@ static var _portrait_files = [
 	"portrait_snes_mutant_1772878187681.png",
 	"portrait_snes_veteran_1772878201019.png",
 	"portrait_snes_tech_1772878211447.png",
-	"portrait_snes_gasmask_1772878223770.png"
+	"portrait_snes_gasmask_1772878223770.png",
+	"portrait_8bit_bruiser_1772963869986.png",
+	"portrait_8bit_cyborg_1772963883404.png",
+	"portrait_8bit_freak_1772963896329.png",
+	"portrait_8bit_mutant_1772963832189.png",
+	"portrait_8bit_punk_1772963859267.png",
+	"portrait_8bit_scavenger_1772963846391.png",
+	"portrait_nes_biker_1772964070332.png",
+	"portrait_nes_bruiser_1772964039591.png",
+	"portrait_nes_cyborg_1772964053438.png",
+	"portrait_nes_mutant_1772963998242.png",
+	"portrait_nes_punk_1772964027280.png",
+	"portrait_nes_scavenger_1772964012237.png",
+	"portrait_nes2_cyborg_bruiser_1772964194204.png",
+	"portrait_nes2_gasmask_scavenger_1772964167872.png",
+	"portrait_nes2_neon_punk_1772964180329.png",
+	"portrait_nes2_spiked_biker_1772964208535.png",
+	"portrait_nes2_swamp_mutant_1772964155888.png"
 ]
 static var _portrait_pool: Array[Texture2D] = []
 
@@ -33,7 +50,19 @@ static func _load_portraits():
 	for f in _portrait_files:
 		var tex = load("res://assets/portraits/" + f) as Texture2D
 		if tex:
-			_portrait_pool.append(tex)
+			var img = tex.get_image()
+			if img:
+				if img.is_compressed():
+					img.decompress()
+				img.convert(Image.FORMAT_RGBA8)
+				for y in range(img.get_height()):
+					for x in range(img.get_width()):
+						var c = img.get_pixel(x, y)
+						if c.r > 0.9 and c.g < 0.1 and c.b > 0.9:
+							img.set_pixel(x, y, Color(0, 0, 0, 0))
+				_portrait_pool.append(ImageTexture.create_from_image(img))
+			else:
+				_portrait_pool.append(tex)
 
 # Stats (0-10 or 0-100 scale)
 @export var speed: float = 5.0
@@ -42,6 +71,10 @@ static func _load_portraits():
 @export var tackle: float = 5.0
 @export var strength: float = 5.0
 @export var aggression: float = 5.0
+
+# Progression
+@export var xp: int = 0
+@export var level: int = 1
 
 # Active Season Stats
 @export var pts: int = 0
@@ -113,3 +146,43 @@ func randomize_with_archetype(tier: int = 1):
 		shot = clampf(round(randfn(sec_base, 10.0)), min_stat, max_stat)
 		pass_skill = clampf(round(randfn(sec_base, 10.0)), min_stat, max_stat)
 		speed = clampf(round(randfn(sec_base, 10.0)), min_stat, max_stat)
+
+func get_xp_for_next_level() -> int:
+	return 100 + (level - 1) * 50
+
+func add_xp(amount: int) -> Dictionary:
+	xp += amount
+	var levels_gained = 0
+	var stat_diffs = {"speed": 0, "shot": 0, "pass_skill": 0, "tackle": 0, "strength": 0, "aggression": 0}
+	
+	while xp >= get_xp_for_next_level():
+		xp -= get_xp_for_next_level()
+		level += 1
+		levels_gained += 1
+		
+		# Distribute 10 stat points randomly
+		var points_to_distribute = 10
+		var stat_keys = ["speed", "shot", "pass_skill", "tackle", "strength", "aggression"]
+		# Only give points if the stat isn't soft capped at 99
+		var available_keys = []
+		for key in stat_keys:
+			if get(key) < 99.0:
+				available_keys.append(key)
+		
+		if available_keys.size() > 0:
+			for i in range(points_to_distribute):
+				# Refresh available keys logic could be here if we cared about capping exactly at 99 mid-loop
+				var key = available_keys[randi() % available_keys.size()]
+				var current_val = get(key)
+				if current_val < 99.0:
+					set(key, current_val + 1.0)
+					stat_diffs[key] += 1
+					if current_val + 1.0 >= 99.0:
+						available_keys.erase(key)
+						if available_keys.size() == 0:
+							break
+				
+	return {
+		"levels_gained": levels_gained,
+		"stat_diffs": stat_diffs
+	}

@@ -13,24 +13,26 @@ const ID_VOID       = 4
 const ID_GOLD_RUSH  = 5
 const ID_CYBER_GRID = 6
 const ID_DESERT     = 7
+const ID_NEON       = 8
 
-const PRESET_COUNT = 8
+const PRESET_COUNT = 9
 
 # Human-readable names in same order as ID_* constants
 const PRESET_NAMES: Array = [
-	"Default Neon",
+	"Pro Arena",
 	"Home Court",
 	"Inferno",
 	"Glacial",
 	"Void",
 	"Gold Rush",
 	"Cyber Grid",
-	"Desert"
+	"Desert",
+	"Neon Grid"
 ]
 
 # Emoji/icon per preset (used in UI cards)
 const PRESET_ICONS: Array = [
-	"⚡", "🏠", "🔥", "❄️", "🌑", "✨", "🟣", "🌵"
+	"🏟️", "🏠", "🔥", "❄️", "🌑", "✨", "🟣", "🌵", "⚡"
 ]
 
 # =============================================================
@@ -51,10 +53,12 @@ func get_preset(index: int, team_data: Resource = null) -> CourtTheme:
 			return _make_void()
 		ID_GOLD_RUSH:
 			return _make_gold_rush()
-		6:  # Cyber Grid
+		ID_CYBER_GRID:
 			return _make_cyber_grid()
 		ID_DESERT:
 			return _make_desert()
+		ID_NEON:
+			return _make_neon()
 		_:  # ID_DEFAULT and fallback
 			return _make_default()
 
@@ -86,7 +90,26 @@ func get_home_court(team_data: Resource) -> CourtTheme:
 
 func _make_default() -> CourtTheme:
 	var t = CourtTheme.new()
-	t.theme_name         = "Default Neon"
+	t.theme_name         = "Pro Arena"
+	t.floor_color        = Color(1.0, 1.0, 1.0)
+	t.wall_color         = Color(1.0, 1.0, 1.0, 0.0) # Invisible walls for bleachers
+	t.line_color         = Color(0.9, 0.9, 0.9) # Court lines: white
+	t.hoop_color         = Color(1.0, 0.2, 0.0) # Standard orange/red
+	t.ambient_color      = Color(0.4, 0.4, 0.45)
+	t.main_light_color   = Color(1.0, 0.95, 0.9)
+	t.spotlight_color    = Color(1.0, 1.0, 1.0)
+	t.floor_accent_color = Color(0.1, 0.1, 0.2)
+	t.glow_enabled       = false
+	t.swatch_color       = Color(0.8, 0.6, 0.4)
+	
+	t.procedural_wood    = true
+	t.has_bleachers      = true
+	
+	return t
+
+func _make_neon() -> CourtTheme:
+	var t = CourtTheme.new()
+	t.theme_name         = "Neon Grid"
 	t.floor_color        = Color(0.08, 0.08, 0.12)
 	t.wall_color         = Color(0.15, 0.15, 0.2, 0.7)
 	t.line_color         = Color(0.0, 0.9, 1.0)

@@ -16,6 +16,7 @@ var current_save_file: String = ""
 var schedule: Array = []
 var current_week: int = 0
 var is_postseason: bool = false
+var last_match_progression: Dictionary = {}
 var playoff_schedule: Array = []
 var season_config: Dictionary = {}
 
@@ -386,6 +387,17 @@ func simulate_week() -> Dictionary:
 		
 		# Record the player's detailed sim data for the UI
 		if m["home"] == player_team.name or m["away"] == player_team.name:
+			last_match_progression.clear()
+			var h_score = sim_data["home_score"]
+			var a_score = sim_data["away_score"]
+			var p_won = (m["home"] == player_team.name and h_score > a_score) or (m["away"] == player_team.name and a_score > h_score)
+			var xp_reward = 100 if p_won else 50
+			var team_size = season_config.get("team_size", player_team.roster.size())
+			var active_roster = player_team.roster.slice(0, min(team_size, player_team.roster.size()))
+			for p in active_roster:
+				var prog = p.add_xp(xp_reward)
+				prog["xp_gained"] = xp_reward
+				last_match_progression[p.name] = prog
 			player_sim_data = sim_data
 		
 		var h_score = sim_data["home_score"]
@@ -478,6 +490,17 @@ func simulate_playoff_week() -> Dictionary:
 		var sim_data = simulate_detailed_match(t_home, t_away)
 		
 		if m["home"] == player_team.name or m["away"] == player_team.name:
+			last_match_progression.clear()
+			var h_score = sim_data["home_score"]
+			var a_score = sim_data["away_score"]
+			var p_won = (m["home"] == player_team.name and h_score > a_score) or (m["away"] == player_team.name and a_score > h_score)
+			var xp_reward = 100 if p_won else 50
+			var team_size = season_config.get("team_size", player_team.roster.size())
+			var active_roster = player_team.roster.slice(0, min(team_size, player_team.roster.size()))
+			for p in active_roster:
+				var prog = p.add_xp(xp_reward)
+				prog["xp_gained"] = xp_reward
+				last_match_progression[p.name] = prog
 			player_sim_data = sim_data
 			
 		var h_score = sim_data["home_score"]
@@ -888,7 +911,9 @@ func save_season() -> void:
 					"fgm": p.fgm,
 					"fga": p.fga,
 					"tpm": p.tpm,
-					"tpa": p.tpa
+					"tpa": p.tpa,
+					"xp": p.xp,
+					"level": p.level
 				})
 			div_data["teams"].append(t_data)
 		save_data["divisions"].append(div_data)
@@ -976,6 +1001,8 @@ func load_season(filename: String) -> bool:
 				p.fgm = raw_p.get("fgm", 0)
 				p.tpa = raw_p.get("tpa", 0)
 				p.tpm = raw_p.get("tpm", 0)
+				p.xp = raw_p.get("xp", 0)
+				p.level = raw_p.get("level", 1)
 				team.add_player(p)
 				
 			teams_in_div.append(team)
@@ -1079,6 +1106,17 @@ func record_season_match_result(player_score: int, opponent_score: int, opponent
 			best_ast = p
 			best_ast_val = g_ast
 		
+	# Handle XP and Progression for Player Team
+	last_match_progression.clear()
+	var xp_reward = 100 if p_won else 50
+	
+	var team_size = season_config.get("team_size", player_team.roster.size())
+	var active_roster = player_team.roster.slice(0, min(team_size, player_team.roster.size()))
+	for p in active_roster:
+		var prog = p.add_xp(xp_reward)
+		prog["xp_gained"] = xp_reward
+		last_match_progression[p.name] = prog
+		
 	# Find our match in the schedule and mark it played
 	var active_schedule = playoff_schedule if is_postseason else schedule
 	var played_match = false
@@ -1127,6 +1165,16 @@ func get_champion_name() -> String:
 					return m["home"] if m["home_score"] > m["away_score"] else m["away"]
 	return ""
 
+func get_all_champions() -> Dictionary:
+	var champs = {}
+	if playoff_schedule.size() > 0:
+		var final_week = playoff_schedule[playoff_schedule.size() - 1]
+		for m in final_week:
+			if m["played"]:
+				var div_name = m.get("division", "")
+				champs[div_name] = m["home"] if m["home_score"] > m["away_score"] else m["away"]
+	return champs
+
 func process_season_rollover(champion_name: String) -> void:
 	var moves = []
 	
@@ -1137,7 +1185,15 @@ func process_season_rollover(champion_name: String) -> void:
 			var div_teams = div["teams"].duplicate()
 			div_teams.sort_custom(func(a, b): return a.wins > b.wins)
 			var lowest = div_teams[-1]
-			moves.append({"team": lowest, "from": div["teams"], "to": divisions[i-1]["teams"]})
+			# Ensure we only relegate if they're not a champion (edge case)
+			var is_champ = false
+			for m in playoff_schedule[-1]:
+				if m.get("division", "") == div["name"] and m["played"]:
+					var c_name = m["home"] if m["home_score"] > m["away_score"] else m["away"]
+					if c_name == lowest.name:
+						is_champ = true
+			if not is_champ:
+				moves.append({"team": lowest, "from": div["teams"], "to": divisions[i-1]["teams"]})
 			
 	# Promote the champion of each division (excluding top div)
 	for i in range(divisions.size() - 1):
@@ -1156,15 +1212,6 @@ func process_season_rollover(champion_name: String) -> void:
 			var champ_team = _get_team_by_name(div_champ_name)
 			if champ_team:
 				moves.append({"team": champ_team, "from": divisions[i]["teams"], "to": divisions[i+1]["teams"]})
-	var champ = _get_team_by_name(champion_name)
-	var champ_div_idx = -1
-	for i in range(divisions.size()):
-		if champ in divisions[i]["teams"]:
-			champ_div_idx = i
-			break
-			
-	if champ_div_idx >= 0 and champ_div_idx < divisions.size() - 1:
-		moves.append({"team": champ, "from": divisions[champ_div_idx]["teams"], "to": divisions[champ_div_idx+1]["teams"]})
 		
 	for m in moves:
 		m["from"].erase(m["team"])

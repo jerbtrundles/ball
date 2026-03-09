@@ -23,8 +23,12 @@ func apply_theme(theme: CourtTheme) -> void:
 	
 	if floor_material:
 		floor_material.albedo_color = theme.floor_color
+
 	if wall_material:
 		wall_material.albedo_color = theme.wall_color
+		wall_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		wall_material.uv1_scale = Vector3(1, 1, 1)
+
 	if line_material:
 		line_material.albedo_color = theme.line_color
 		line_material.emission = theme.line_color
@@ -34,10 +38,12 @@ func apply_theme(theme: CourtTheme) -> void:
 		hoop_material.emission = theme.hoop_color
 		hoop_material.emission_energy_multiplier = 2.0 if theme.glow_enabled else 0.5
 	
-	# Animated floor override
+	# Animated floor or procedural wood override
 	if _floor_mesh:
-		if theme.animated_floor:
+		if "animated_floor" in theme and theme.animated_floor:
 			_floor_mesh.material_override = _build_animated_floor_material(theme)
+		elif "procedural_wood" in theme and theme.procedural_wood:
+			_floor_mesh.material_override = _build_procedural_wood_material(theme)
 		else:
 			_floor_mesh.material_override = floor_material
 			if floor_material:
@@ -46,8 +52,125 @@ func apply_theme(theme: CourtTheme) -> void:
 	# Apply lighting changes immediately
 	_apply_theme_lighting()
 	
+	# Handle crowd and bleachers
+	_build_bleachers_and_crowd(theme)
+
+	
 	# Spawn hazards
 	_spawn_theme_hazards(theme)
+
+func _build_bleachers_and_crowd(theme: CourtTheme) -> void:
+	# Clear existing
+	for child in get_children():
+		if child.name == "BleachersLayer":
+			child.queue_free()
+			
+	if not "has_bleachers" in theme or not theme.has_bleachers:
+		return
+		
+	var bleachers_node = Node3D.new()
+	bleachers_node.name = "BleachersLayer"
+	
+	var step_count = 5
+	var step_width = 1.0
+	var step_height = 0.6
+	
+	var bleacher_mat = StandardMaterial3D.new()
+	bleacher_mat.albedo_color = Color(0.2, 0.2, 0.25)
+	bleacher_mat.metallic = 0.5
+	bleacher_mat.roughness = 0.7
+	
+	# A helper to build a section of bleachers
+	var build_section = func(pos: Vector3, size: Vector3, rot: Vector3, label: String):
+		var sec_node = Node3D.new()
+		sec_node.name = "Section_" + label
+		sec_node.position = pos
+		sec_node.rotation = rot
+		
+		# Build steps
+		for i in range(step_count):
+			var step_mesh = MeshInstance3D.new()
+			var box = BoxMesh.new()
+			# Z is horizontal length for this local section, X is depth, Y is height
+			# The section runs along local Z axis
+			box.size = Vector3(step_width, step_height * (i + 1), size.z)
+			step_mesh.mesh = box
+			step_mesh.material_override = bleacher_mat
+			# Move back in X and up in Y for each step
+			step_mesh.position = Vector3(i * step_width, step_height * (i + 1) / 2.0, 0)
+			sec_node.add_child(step_mesh)
+			
+			# Spawn some crowd members on this step
+			_spawn_3d_crowd_on_step(sec_node, i * step_width, step_height * (i + 1), size.z)
+			
+		bleachers_node.add_child(sec_node)
+	
+	var half_w = court_width / 2.0
+	var half_l = court_length / 2.0
+	var start_dist_x = half_w + wall_thickness + 3.0  # Pushed back by 3m to leave walking room
+	var start_dist_z = half_l + wall_thickness + 3.5  # Pushed back by 3.5m to leave room behind baskets
+	
+	# East Wall (Facing -X)
+	build_section.call(Vector3(start_dist_x, 0, 0), Vector3(step_width * step_count, 0, court_length + 4.0), Vector3(0, 0, 0), "East")
+	# West Wall (Facing +X)
+	build_section.call(Vector3(-start_dist_x, 0, 0), Vector3(step_width * step_count, 0, court_length + 4.0), Vector3(0, PI, 0), "West")
+	# North Wall (Facing +Z) -> was -PI/2, should be PI/2 to face inwards (from -Z to center)
+	build_section.call(Vector3(0, 0, -start_dist_z), Vector3(step_width * step_count, 0, court_width + 4.0), Vector3(0, PI/2, 0), "North")
+	# South Wall (Facing -Z) -> was PI/2, should be -PI/2 to face inwards (from +Z to center)
+	build_section.call(Vector3(0, 0, start_dist_z), Vector3(step_width * step_count, 0, court_width + 4.0), Vector3(0, -PI/2, 0), "South")
+	
+	add_child(bleachers_node)
+
+func _spawn_3d_crowd_on_step(parent: Node3D, step_x: float, step_y: float, length_z: float) -> void:
+	var crowd_spacing = 1.2
+	var count = int(length_z / crowd_spacing)
+	var start_z = -length_z / 2.0 + crowd_spacing / 2.0
+	
+	var spec_mesh = CapsuleMesh.new()
+	spec_mesh.radius = 0.25
+	spec_mesh.height = 1.0
+	
+	for i in range(count):
+		# Random chance to have an empty seat
+		if randf() < 0.2: continue
+		
+		var spec = MeshInstance3D.new()
+		spec.mesh = spec_mesh
+		
+		var mat = StandardMaterial3D.new()
+		# Randomize color - mostly neutral or team colors (we'll just use random bright colors for now)
+		var h = randf()
+		var s = randf_range(0.4, 0.8)
+		var v = randf_range(0.6, 0.9)
+		mat.albedo_color = Color.from_hsv(h, s, v)
+		mat.roughness = 0.8
+		spec.material_override = mat
+		
+		# Jitter position slightly
+		var jitter_z = randf_range(-0.2, 0.2)
+		var jitter_x = randf_range(-0.2, 0.2)
+		
+		# Sit on the step
+		spec.position = Vector3(step_x + jitter_x, step_y + spec_mesh.height / 2.0, start_z + i * crowd_spacing + jitter_z)
+		
+		# Add a simple bobbing script
+		var bob_script = GDScript.new()
+		bob_script.source_code = """
+extends MeshInstance3D
+var time_offset: float = 0.0
+var speed: float = 1.0
+var base_y: float = 0.0
+func _ready():
+	time_offset = randf() * TAU
+	speed = randf_range(5.0, 10.0)
+	base_y = position.y
+func _process(delta):
+	position.y = base_y + max(0.0, sin(Time.get_ticks_msec() / 1000.0 * speed + time_offset)) * 0.2
+"""
+		bob_script.reload()
+		spec.set_script(bob_script)
+		
+		parent.add_child(spec)
 
 func _spawn_theme_hazards(theme: CourtTheme) -> void:
 	# Clear existing theme hazards
@@ -678,4 +801,68 @@ void fragment() {
 	mat.set_shader_parameter("ripple_color", Vector3(theme.floor_accent_color.r, theme.floor_accent_color.g, theme.floor_accent_color.b))
 	mat.set_shader_parameter("court_length", court_length + 4.0)
 	mat.set_shader_parameter("court_width",  court_width)
+	return mat
+
+## Builds a high-gloss procedural wooden floorboard shader for Pro Arena
+func _build_procedural_wood_material(theme: CourtTheme) -> ShaderMaterial:
+	var mat = ShaderMaterial.new()
+	var shader = Shader.new()
+	shader.code = """
+shader_type spatial;
+render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
+
+uniform vec3 base_wood_color : source_color = vec3(0.8, 0.6, 0.4);
+uniform vec3 dark_wood_color : source_color = vec3(0.6, 0.4, 0.2);
+uniform float plank_width = 0.5;
+uniform float plank_length = 3.0;
+uniform float court_width = 16.0;
+uniform float court_length = 34.0;
+
+// Pseudo-random function
+float rand(vec2 co) {
+	return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+void fragment() {
+	// World UVs
+	float world_x = (UV.x - 0.5) * court_width;
+	float world_z = (UV.y - 0.5) * court_length;
+	
+	// Determine which plank column we are in
+	float col = floor(world_x / plank_width);
+	// Stagger the planks based on the column
+	float stagger = rand(vec2(col, 0.0)) * plank_length;
+	// Determine which row we are in within that column
+	float row = floor((world_z + stagger) / plank_length);
+	
+	// Create a unique seed for this specific plank
+	vec2 plank_id = vec2(col, row);
+	float plank_rand = rand(plank_id);
+	
+	// Mix between light and dark wood based on plank ID
+	vec3 wood_col = mix(dark_wood_color, base_wood_color, 0.4 + 0.6 * plank_rand);
+	
+	// Add some faux procedural grain (simple high-frequency noise stretched along Z)
+	float grain = rand(vec2(world_x * 50.0, world_z * 2.0));
+	wood_col *= mix(0.9, 1.1, grain);
+	
+	// Very thin dark lines between planks
+	float edge_x = fract(world_x / plank_width);
+	float edge_z = fract((world_z + stagger) / plank_length);
+	if (edge_x < 0.02 || edge_x > 0.98 || edge_z < 0.01 || edge_z > 0.99) {
+		wood_col *= 0.5; // Darken edges
+	}
+	
+	ALBEDO = wood_col;
+	ROUGHNESS = mix(0.1, 0.25, grain); // Highly glossy but grain affects it
+	METALLIC = 0.05;
+}
+"""
+	mat.shader = shader
+	mat.set_shader_parameter("base_wood_color", Vector3(0.85, 0.65, 0.45))
+	mat.set_shader_parameter("dark_wood_color", Vector3(0.70, 0.50, 0.30))
+	mat.set_shader_parameter("plank_width", 0.5)
+	mat.set_shader_parameter("plank_length", 3.0)
+	mat.set_shader_parameter("court_width", court_width)
+	mat.set_shader_parameter("court_length", court_length + 4.0)
 	return mat

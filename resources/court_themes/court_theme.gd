@@ -16,3 +16,5 @@ class_name CourtTheme
 @export var animated_floor: bool = false  # Enables ShaderMaterial sweep animation
 @export var hazard_scenes: Array[PackedScene] = []
 @export var hazard_count: int = 0
+@export var procedural_wood: bool = false
+@export var has_bleachers: bool = false

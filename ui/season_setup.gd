@@ -35,18 +35,18 @@ var selected_color_index: int = 0
 
 # Curated sports color palette — (primary, secondary hint)
 const TEAM_COLORS: Array = [
-	{"name": "Crimson",     "color": Color(0.85, 0.1,  0.1 )},
-	{"name": "Flame",       "color": Color(0.95, 0.4,  0.05)},
-	{"name": "Gold",        "color": Color(0.95, 0.8,  0.05)},
-	{"name": "Lime",        "color": Color(0.35, 0.82, 0.1 )},
-	{"name": "Forest",      "color": Color(0.05, 0.55, 0.25)},
-	{"name": "Teal",        "color": Color(0.05, 0.7,  0.65)},
-	{"name": "Sky",         "color": Color(0.15, 0.6,  0.95)},
-	{"name": "Royal",       "color": Color(0.1,  0.2,  0.85)},
-	{"name": "Indigo",      "color": Color(0.3,  0.1,  0.8 )},
-	{"name": "Violet",      "color": Color(0.65, 0.1,  0.85)},
-	{"name": "Magenta",     "color": Color(0.9,  0.1,  0.6 )},
-	{"name": "Silver",      "color": Color(0.6,  0.65, 0.75)},
+	{"name": "Crimson",  "color": Color(0.85, 0.1,  0.1 )},
+	{"name": "Flame",    "color": Color(0.95, 0.4,  0.05)},
+	{"name": "Gold",     "color": Color(0.95, 0.8,  0.05)},
+	{"name": "Lime",     "color": Color(0.35, 0.82, 0.1 )},
+	{"name": "Forest",   "color": Color(0.05, 0.55, 0.25)},
+	{"name": "Sky",      "color": Color(0.15, 0.6,  0.95)},
+	{"name": "Indigo",   "color": Color(0.3,  0.1,  0.8 )},
+	{"name": "Violet",   "color": Color(0.65, 0.1,  0.85)},
+	{"name": "Magenta",  "color": Color(0.9,  0.1,  0.6 )},
+	{"name": "Silver",   "color": Color(0.6,  0.65, 0.75)},
+	{"name": "Black",    "color": Color(0.15, 0.15, 0.15)},
+	{"name": "White",    "color": Color(0.95, 0.95, 0.95)},
 ]
 
 var _color_swatch_buttons: Array = []
@@ -336,6 +336,19 @@ func _update_ui() -> void:
 		name_lbl.add_theme_stylebox_override("focus", sb_line_f)
 		name_lbl.text_changed.connect(func(new_text): p.name = new_text)
 		header_hbox.add_child(name_lbl)
+		
+		var edit_btn = Button.new()
+		edit_btn.text = "✎"
+		edit_btn.add_theme_font_size_override("font_size", 14)
+		var btn_sb = StyleBoxFlat.new()
+		btn_sb.bg_color = Color(0.15, 0.15, 0.2, 0.6)
+		btn_sb.set_corner_radius_all(4)
+		btn_sb.content_margin_left = 6
+		btn_sb.content_margin_right = 6
+		edit_btn.add_theme_stylebox_override("normal", btn_sb)
+		edit_btn.add_theme_stylebox_override("hover", btn_sb)
+		edit_btn.pressed.connect(func(): name_lbl.grab_focus())
+		header_hbox.add_child(edit_btn)
 		
 		var ovr_lbl = Label.new()
 		var p_ovr = int(round((p.speed + p.shot + p.pass_skill + p.tackle + p.strength + p.aggression) / 6.0))

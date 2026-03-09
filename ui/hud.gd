@@ -95,7 +95,7 @@ func _input(event: InputEvent) -> void:
 	if game_manager and game_manager.match_state == 6: # MatchState.GAME_OVER
 		if event.is_action_pressed("ui_accept") or (event is InputEventMouseButton and event.pressed) or event.is_action_pressed("ui_cancel"):
 			if "is_season_game" in game_manager and game_manager.is_season_game:
-				get_tree().change_scene_to_file("res://ui/season_hub.tscn")
+				get_tree().change_scene_to_file("res://ui/post_game_progression.tscn")
 			else:
 				get_tree().change_scene_to_file("res://ui/main_menu.tscn")
 

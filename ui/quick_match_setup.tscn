@@ -26,273 +26,287 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_constants/margin_left = 60
 theme_override_constants/margin_top = 100
+theme_override_constants/margin_right = 60
+theme_override_constants/margin_bottom = 60
 
-[node name="LeftRoster" type="VBoxContainer" parent="MarginContainer" unique_id=604719582]
-custom_minimum_size = Vector2(300, 0)
+[node name="MainHBox" type="HBoxContainer" parent="MarginContainer"]
 layout_mode = 2
-size_flags_horizontal = 0
-theme_override_constants/margin_left = 40
-theme_override_constants/margin_top = 0
-theme_override_constants/margin_bottom = 40
+alignment = 1
+theme_override_constants/separation = 40
+
+[node name="LeftScroll" type="ScrollContainer" parent="MarginContainer/MainHBox"]
+custom_minimum_size = Vector2(380, 0)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 3
+
+[node name="LeftRoster" type="VBoxContainer" parent="MarginContainer/MainHBox/LeftScroll" unique_id=604719582]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="RightRoster" type="VBoxContainer" parent="MarginContainer" unique_id=819771146]
-custom_minimum_size = Vector2(300, 0)
-layout_mode = 2
-size_flags_horizontal = 8
-theme_override_constants/margin_top = 0
-theme_override_constants/margin_right = 40
-theme_override_constants/margin_bottom = 40
-theme_override_constants/separation = 10
-
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=1738970573]
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/MainHBox" unique_id=1738970573]
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
 theme_override_constants/separation = 10
 
-[node name="Title" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1065204247]
+[node name="Title" type="Label" parent="MarginContainer/MainHBox/VBoxContainer" unique_id=1065204247]
 layout_mode = 2
 theme_override_font_sizes/font_size = 48
 text = "QUICK MATCH"
 horizontal_alignment = 1
 
-[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=430494512]
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/MainHBox/VBoxContainer" unique_id=430494512]
 layout_mode = 2
 
-[node name="HBox_Teams" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1344500752]
+[node name="HBox_Teams" type="HBoxContainer" parent="MarginContainer/MainHBox/VBoxContainer" unique_id=1344500752]
 layout_mode = 2
 theme_override_constants/separation = 20
 alignment = 1
 
-[node name="VBox_TeamA" type="VBoxContainer" parent="MarginContainer/VBoxContainer/HBox_Teams" unique_id=1280289170]
-custom_minimum_size = Vector2(400, 450)
+[node name="VBox_TeamA" type="VBoxContainer" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams" unique_id=1280289170]
+custom_minimum_size = Vector2(400, 520)
 layout_mode = 2
 theme_override_constants/separation = 4
 alignment = 1
 
-[node name="Label_Header" type="Label" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=826545166]
+[node name="Label_Header" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=826545166]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 text = "HOME"
 horizontal_alignment = 1
 
-[node name="BtnUp" type="Button" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=870885716]
+[node name="BtnUp" type="Button" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=870885716]
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
 text = "▲"
 flat = true
 
-[node name="LogoRect" type="TextureRect" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=1185547767]
+[node name="LogoRect" type="TextureRect" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=1185547767]
 custom_minimum_size = Vector2(300, 300)
 layout_mode = 2
 size_flags_vertical = 3
 expand_mode = 1
 stretch_mode = 5
 
-[node name="TeamName" type="Label" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=1711092275]
+[node name="TeamName" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=1711092275]
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
 text = "Team A"
 horizontal_alignment = 1
 
-[node name="TeamRating" type="Label" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=499698785]
+[node name="TeamRating" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=499698785]
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 text = "OVR: 50"
 horizontal_alignment = 1
 
-[node name="BtnDown" type="Button" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=528926888]
+[node name="BtnDown" type="Button" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA" unique_id=528926888]
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
 text = "▼"
 flat = true
 
-[node name="VS_Label" type="Label" parent="MarginContainer/VBoxContainer/HBox_Teams" unique_id=585727985]
+[node name="VS_Label" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams" unique_id=585727985]
 layout_mode = 2
 theme_override_font_sizes/font_size = 48
 text = "VS"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="VBox_TeamB" type="VBoxContainer" parent="MarginContainer/VBoxContainer/HBox_Teams" unique_id=315274769]
-custom_minimum_size = Vector2(400, 450)
+[node name="VBox_TeamB" type="VBoxContainer" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams" unique_id=315274769]
+custom_minimum_size = Vector2(400, 520)
 layout_mode = 2
 theme_override_constants/separation = 4
 alignment = 1
 
-[node name="Label_Header" type="Label" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=762208836]
+[node name="Label_Header" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=762208836]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 text = "AWAY"
 horizontal_alignment = 1
 
-[node name="BtnUp" type="Button" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=1255751958]
+[node name="BtnUp" type="Button" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=1255751958]
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
 text = "▲"
 flat = true
 
-[node name="LogoRect" type="TextureRect" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=1187915855]
+[node name="LogoRect" type="TextureRect" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=1187915855]
 custom_minimum_size = Vector2(300, 300)
 layout_mode = 2
 size_flags_vertical = 3
 expand_mode = 1
 stretch_mode = 5
 
-[node name="TeamName" type="Label" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=584400462]
+[node name="TeamName" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=584400462]
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
 text = "Team B"
 horizontal_alignment = 1
 
-[node name="TeamRating" type="Label" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=319485947]
+[node name="TeamRating" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=319485947]
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 text = "OVR: 50"
 horizontal_alignment = 1
 
-[node name="BtnDown" type="Button" parent="MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=860891780]
+[node name="BtnDown" type="Button" parent="MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB" unique_id=860891780]
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
 text = "▼"
 flat = true
 
-[node name="SideSelector" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=652918863]
+[node name="SideSelector" type="HBoxContainer" parent="MarginContainer/MainHBox/VBoxContainer" unique_id=652918863]
 layout_mode = 2
 theme_override_constants/separation = 4
 alignment = 1
 
-[node name="ZoneA" type="PanelContainer" parent="MarginContainer/VBoxContainer/SideSelector" unique_id=1093807549]
+[node name="ZoneA" type="PanelContainer" parent="MarginContainer/MainHBox/VBoxContainer/SideSelector" unique_id=1093807549]
 custom_minimum_size = Vector2(180, 36)
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/SideSelector/ZoneA" unique_id=1779844796]
+[node name="Label" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/SideSelector/ZoneA" unique_id=1779844796]
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "🎮"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="ZoneSpec" type="PanelContainer" parent="MarginContainer/VBoxContainer/SideSelector" unique_id=934501863]
+[node name="ZoneSpec" type="PanelContainer" parent="MarginContainer/MainHBox/VBoxContainer/SideSelector" unique_id=934501863]
 custom_minimum_size = Vector2(140, 36)
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/SideSelector/ZoneSpec" unique_id=782600819]
+[node name="Label" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/SideSelector/ZoneSpec" unique_id=782600819]
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
 text = "AI vs AI"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="ZoneB" type="PanelContainer" parent="MarginContainer/VBoxContainer/SideSelector" unique_id=1763596211]
+[node name="ZoneB" type="PanelContainer" parent="MarginContainer/MainHBox/VBoxContainer/SideSelector" unique_id=1763596211]
 custom_minimum_size = Vector2(180, 36)
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/SideSelector/ZoneB" unique_id=1912238783]
+[node name="Label" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/SideSelector/ZoneB" unique_id=1912238783]
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=1022029730]
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/MainHBox/VBoxContainer" unique_id=1022029730]
 layout_mode = 2
 
-[node name="OptionsPanel" type="PanelContainer" parent="MarginContainer/VBoxContainer" unique_id=25021657]
+[node name="OptionsPanel" type="PanelContainer" parent="MarginContainer/MainHBox/VBoxContainer" unique_id=25021657]
 layout_mode = 2
 
-[node name="OptionsVBox" type="VBoxContainer" parent="MarginContainer/VBoxContainer/OptionsPanel" unique_id=2123080727]
+[node name="OptionsVBox" type="VBoxContainer" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel" unique_id=2123080727]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="HBox_TeamSize" type="HBoxContainer" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox" unique_id=1209028452]
+[node name="HBox_TeamSize" type="HBoxContainer" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox" unique_id=1209028452]
 layout_mode = 2
 alignment = 1
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize" unique_id=335137022]
+[node name="Label" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize" unique_id=335137022]
 custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 15
 text = "Team Size"
 horizontal_alignment = 2
 
-[node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize" unique_id=1478319706]
+[node name="OptionButton" type="OptionButton" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize" unique_id=1478319706]
 custom_minimum_size = Vector2(220, 0)
 layout_mode = 2
 
-[node name="HBox_Quarters" type="HBoxContainer" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox" unique_id=1924610218]
+[node name="HBox_Quarters" type="HBoxContainer" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox" unique_id=1924610218]
 layout_mode = 2
 alignment = 1
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters" unique_id=1085512352]
+[node name="Label" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters" unique_id=1085512352]
 custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 15
 text = "Quarter Length"
 horizontal_alignment = 2
 
-[node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters" unique_id=780795262]
+[node name="OptionButton" type="OptionButton" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters" unique_id=780795262]
 custom_minimum_size = Vector2(220, 0)
 layout_mode = 2
 
-[node name="HBox_Court" type="HBoxContainer" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox" unique_id=1609812345]
+[node name="HBox_Court" type="HBoxContainer" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox" unique_id=1609812345]
 layout_mode = 2
 alignment = 1
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812346]
+[node name="Label" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812346]
 custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 15
 text = "Court"
 horizontal_alignment = 2
 
-[node name="BtnCourtPrev" type="Button" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812347]
+[node name="BtnCourtPrev" type="Button" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812347]
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
 text = "◀"
 flat = true
 
-[node name="CourtCardsContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812348]
+[node name="CourtCardsContainer" type="HBoxContainer" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812348]
 custom_minimum_size = Vector2(220, 52)
 layout_mode = 2
 theme_override_constants/separation = 5
 alignment = 1
 
-[node name="BtnCourtNext" type="Button" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812349]
+[node name="BtnCourtNext" type="Button" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court" unique_id=1609812349]
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
 text = "▶"
 flat = true
 
-[node name="HBox_Items" type="HBoxContainer" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox" unique_id=42832367]
+[node name="HBox_Items" type="HBoxContainer" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox" unique_id=42832367]
 layout_mode = 2
 alignment = 1
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items" unique_id=1179267719]
+[node name="Label" type="Label" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items" unique_id=1179267719]
 custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 15
 text = "Items / Hazards"
 horizontal_alignment = 2
 
-[node name="BtnItems" type="Button" parent="MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items" unique_id=1240788244]
+[node name="BtnItems" type="Button" parent="MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items" unique_id=1240788244]
 custom_minimum_size = Vector2(220, 0)
 layout_mode = 2
 text = "All Enabled ▸"
 
-[node name="HSeparator3" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=597291888]
+[node name="HSeparator3" type="HSeparator" parent="MarginContainer/MainHBox/VBoxContainer" unique_id=597291888]
 layout_mode = 2
 
-[node name="BtnStart" type="Button" parent="MarginContainer/VBoxContainer" unique_id=2145482586]
+[node name="BtnStart" type="Button" parent="MarginContainer/MainHBox/VBoxContainer" unique_id=2145482586]
 layout_mode = 2
 theme_override_font_sizes/font_size = 28
 text = "START MATCH"
 
-[node name="BtnBack" type="Button" parent="MarginContainer/VBoxContainer" unique_id=1813050528]
+[node name="BtnBack" type="Button" parent="MarginContainer/MainHBox/VBoxContainer" unique_id=1813050528]
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 text = "BACK"
+
+[node name="RightScroll" type="ScrollContainer" parent="MarginContainer/MainHBox"]
+custom_minimum_size = Vector2(380, 0)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 3
+
+[node name="RightRoster" type="VBoxContainer" parent="MarginContainer/MainHBox/RightScroll" unique_id=819771146]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
 
 [node name="ItemsModal" type="PanelContainer" parent="." unique_id=625376764]
 visible = false

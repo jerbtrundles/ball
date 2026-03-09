@@ -1,43 +1,43 @@
 extends Control
 
 # --- Team panels ---
-@onready var team_a_name: Label = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/TeamName
-@onready var team_a_rating: Label = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/TeamRating
-@onready var team_a_logo: TextureRect = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/LogoRect
-@onready var team_a_container: Control = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA
-@onready var btn_a_up: Button = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/BtnUp
-@onready var btn_a_down: Button = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/BtnDown
+@onready var team_a_name: Label = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA/TeamName
+@onready var team_a_rating: Label = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA/TeamRating
+@onready var team_a_logo: TextureRect = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA/LogoRect
+@onready var team_a_container: Control = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA
+@onready var btn_a_up: Button = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA/BtnUp
+@onready var btn_a_down: Button = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA/BtnDown
 
-@onready var team_b_name: Label = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/TeamName
-@onready var team_b_rating: Label = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/TeamRating
-@onready var team_b_logo: TextureRect = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/LogoRect
-@onready var team_b_container: Control = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB
-@onready var btn_b_up: Button = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/BtnUp
-@onready var btn_b_down: Button = $MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/BtnDown
+@onready var team_b_name: Label = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB/TeamName
+@onready var team_b_rating: Label = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB/TeamRating
+@onready var team_b_logo: TextureRect = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB/LogoRect
+@onready var team_b_container: Control = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB
+@onready var btn_b_up: Button = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB/BtnUp
+@onready var btn_b_down: Button = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB/BtnDown
 
-@onready var left_roster: VBoxContainer = $MarginContainer/LeftRoster
-@onready var right_roster: VBoxContainer = $MarginContainer/RightRoster
+@onready var left_roster: VBoxContainer = $MarginContainer/MainHBox/LeftScroll/LeftRoster
+@onready var right_roster: VBoxContainer = $MarginContainer/MainHBox/RightScroll/RightRoster
 
 # --- Side selector ---
-@onready var zone_a: PanelContainer = $MarginContainer/VBoxContainer/SideSelector/ZoneA
-@onready var zone_spec: PanelContainer = $MarginContainer/VBoxContainer/SideSelector/ZoneSpec
-@onready var zone_b: PanelContainer = $MarginContainer/VBoxContainer/SideSelector/ZoneB
-@onready var zone_a_label: Label = $MarginContainer/VBoxContainer/SideSelector/ZoneA/Label
-@onready var zone_spec_label: Label = $MarginContainer/VBoxContainer/SideSelector/ZoneSpec/Label
-@onready var zone_b_label: Label = $MarginContainer/VBoxContainer/SideSelector/ZoneB/Label
+@onready var zone_a: PanelContainer = $MarginContainer/MainHBox/VBoxContainer/SideSelector/ZoneA
+@onready var zone_spec: PanelContainer = $MarginContainer/MainHBox/VBoxContainer/SideSelector/ZoneSpec
+@onready var zone_b: PanelContainer = $MarginContainer/MainHBox/VBoxContainer/SideSelector/ZoneB
+@onready var zone_a_label: Label = $MarginContainer/MainHBox/VBoxContainer/SideSelector/ZoneA/Label
+@onready var zone_spec_label: Label = $MarginContainer/MainHBox/VBoxContainer/SideSelector/ZoneSpec/Label
+@onready var zone_b_label: Label = $MarginContainer/MainHBox/VBoxContainer/SideSelector/ZoneB/Label
 
 # --- Options ---
-@onready var opt_quarters: OptionButton = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters/OptionButton
-@onready var opt_team_size: OptionButton = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize/OptionButton
-@onready var btn_items: Button = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items/BtnItems
+@onready var opt_quarters: OptionButton = $MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters/OptionButton
+@onready var opt_team_size: OptionButton = $MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize/OptionButton
+@onready var btn_items: Button = $MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items/BtnItems
 
 # --- Court picker ---
-@onready var court_cards_container: HBoxContainer = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/CourtCardsContainer
-@onready var btn_court_prev: Button = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/BtnCourtPrev
-@onready var btn_court_next: Button = $MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/BtnCourtNext
+@onready var court_cards_container: HBoxContainer = $MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/CourtCardsContainer
+@onready var btn_court_prev: Button = $MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/BtnCourtPrev
+@onready var btn_court_next: Button = $MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/BtnCourtNext
 
-@onready var btn_start: Button = $MarginContainer/VBoxContainer/BtnStart
-@onready var btn_back: Button = $MarginContainer/VBoxContainer/BtnBack
+@onready var btn_start: Button = $MarginContainer/MainHBox/VBoxContainer/BtnStart
+@onready var btn_back: Button = $MarginContainer/MainHBox/VBoxContainer/BtnBack
 
 # --- Items modal ---
 @onready var items_modal: PanelContainer = $ItemsModal
@@ -65,13 +65,13 @@ const TEAM_COLORS: Array = [
 	{"name": "Gold",     "color": Color(0.95, 0.8,  0.05)},
 	{"name": "Lime",     "color": Color(0.35, 0.82, 0.1 )},
 	{"name": "Forest",   "color": Color(0.05, 0.55, 0.25)},
-	{"name": "Teal",     "color": Color(0.05, 0.7,  0.65)},
 	{"name": "Sky",      "color": Color(0.15, 0.6,  0.95)},
-	{"name": "Royal",    "color": Color(0.1,  0.2,  0.85)},
 	{"name": "Indigo",   "color": Color(0.3,  0.1,  0.8 )},
 	{"name": "Violet",   "color": Color(0.65, 0.1,  0.85)},
 	{"name": "Magenta",  "color": Color(0.9,  0.1,  0.6 )},
 	{"name": "Silver",   "color": Color(0.6,  0.65, 0.75)},
+	{"name": "Black",    "color": Color(0.15, 0.15, 0.15)},
+	{"name": "White",    "color": Color(0.95, 0.95, 0.95)},
 ]
 
 # Per-team selected color indices (-1 = use team's auto color)
@@ -399,18 +399,18 @@ void fragment() {
 	bg.material = shader_mat
 	
 	# Title
-	$MarginContainer/VBoxContainer/Title.add_theme_color_override("font_color", Color(0.0, 0.9, 1.0))
-	$MarginContainer/VBoxContainer/Title.add_theme_color_override("font_outline_color", Color(0.0, 0.4, 0.6))
-	$MarginContainer/VBoxContainer/Title.add_theme_constant_override("outline_size", 4)
+	$MarginContainer/MainHBox/VBoxContainer/Title.add_theme_color_override("font_color", Color(0.0, 0.9, 1.0))
+	$MarginContainer/MainHBox/VBoxContainer/Title.add_theme_color_override("font_outline_color", Color(0.0, 0.4, 0.6))
+	$MarginContainer/MainHBox/VBoxContainer/Title.add_theme_constant_override("outline_size", 4)
 	
 	# VS
-	var vs = $MarginContainer/VBoxContainer/HBox_Teams/VS_Label
+	var vs = $MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VS_Label
 	vs.add_theme_color_override("font_color", Color(1.0, 0.5, 0.0))
 	vs.add_theme_color_override("font_outline_color", Color(0.5, 0.2, 0.0))
 	vs.add_theme_constant_override("outline_size", 5)
 	
 	# Headers
-	for p in ["MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamA/Label_Header","MarginContainer/VBoxContainer/HBox_Teams/VBox_TeamB/Label_Header"]:
+	for p in ["MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA/Label_Header","MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB/Label_Header"]:
 		get_node(p).add_theme_color_override("font_color", Color(0.5, 0.5, 0.65))
 	
 	# Arrow buttons
@@ -422,10 +422,10 @@ void fragment() {
 		btn.focus_mode = Control.FOCUS_NONE
 	
 	# Options labels
-	for p in ["MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize/Label",
-			  "MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters/Label",
-			  "MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/Label",
-			  "MarginContainer/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items/Label"]:
+	for p in ["MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize/Label",
+			  "MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Quarters/Label",
+			  "MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Court/Label",
+			  "MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_Items/Label"]:
 		get_node(p).add_theme_color_override("font_color", Color(0.7, 0.7, 0.85))
 	
 	# Start button
@@ -445,7 +445,7 @@ void fragment() {
 	panel_sb.set_border_width_all(1)
 	panel_sb.set_corner_radius_all(10)
 	panel_sb.set_content_margin_all(14)
-	$MarginContainer/VBoxContainer/OptionsPanel.add_theme_stylebox_override("panel", panel_sb)
+	$MarginContainer/MainHBox/VBoxContainer/OptionsPanel.add_theme_stylebox_override("panel", panel_sb)
 	
 	# Items modal panel
 	var modal_sb = StyleBoxFlat.new()
@@ -535,16 +535,21 @@ func _nearest_color_index(c: Color) -> int:
 
 # Builds a compact swatch strip and appends it to the given parent control.
 func _build_swatch_strip(parent: Control, is_team_a: bool) -> void:
+	var margin_container = MarginContainer.new()
+	margin_container.add_theme_constant_override("margin_bottom", 20)
+	margin_container.size_flags_vertical = Control.SIZE_SHRINK_END
+	
 	var row = HBoxContainer.new()
 	row.name = "SwatchStrip"
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 4)
-	parent.add_child(row)
+	margin_container.add_child(row)
+	parent.add_child(margin_container)
 	
 	var btns: Array = []
 	for ci in range(TEAM_COLORS.size()):
 		var btn = Button.new()
-		btn.custom_minimum_size = Vector2(20, 20)
+		btn.custom_minimum_size = Vector2(24, 24)
 		btn.tooltip_text = TEAM_COLORS[ci]["name"]
 		btn.focus_mode = Control.FOCUS_NONE
 		var idx_cap = ci
@@ -561,10 +566,12 @@ func _build_swatch_strip(parent: Control, is_team_a: bool) -> void:
 
 func _select_color_a(ci: int) -> void:
 	selected_color_a_index = ci
+	team_a_container.grab_focus()
 	_update_ui()
 
 func _select_color_b(ci: int) -> void:
 	selected_color_b_index = ci
+	team_b_container.grab_focus()
 	_update_ui()
 
 func _get_effective_color(team_index: int, selected_ci: int) -> Color:
