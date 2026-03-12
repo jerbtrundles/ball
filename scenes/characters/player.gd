@@ -99,21 +99,84 @@ var custom_team_color: Color = Color(0, 0, 0, 0) # If alpha > 0, overrides team_
 var _buff_indicator_mesh: MeshInstance3D = null
 var _buff_indicator_mat: StandardMaterial3D = null
 
+# Procedural animation nodes
+var _model_root: Node3D = null
+var _torso: MeshInstance3D = null
+var _head: MeshInstance3D = null
+var _leg_pivot_l: Node3D = null
+var _leg_pivot_r: Node3D = null
+var _foot_l: MeshInstance3D = null
+var _foot_r: MeshInstance3D = null
+var _jersey_label_front: Label3D = null
+var _jersey_label_back: Label3D = null
+
+var _anim_time: float = 0.0
+var _dribble_time: float = 0.0
+
 func _setup_visuals() -> void:
+	# Hide the default capsule mesh if it exists
+	if mesh:
+		mesh.visible = false
+	
+	# Root for all model parts
+	_model_root = Node3D.new()
+	_model_root.name = "ModelRoot"
+	add_child(_model_root)
+	
 	var color = team_colors[team_index] if team_index < team_colors.size() else Color.WHITE
 	if custom_team_color.a > 0.0:
 		color = custom_team_color
 	
 	team_color_material.albedo_color = color
-	team_color_material.albedo_color = color
 	team_color_material.emission_enabled = true
 	team_color_material.emission = color * 0.3
-	team_color_material.metallic = 0.6
-	team_color_material.roughness = 0.3
-	if mesh:
-		mesh.material_override = team_color_material
+	team_color_material.metallic = 0.4
+	team_color_material.roughness = 0.6
 	
-	# Accent color for visor and details
+	# Skin-tone material for head and limbs
+	var skin_mat = StandardMaterial3D.new()
+	skin_mat.albedo_color = Color(0.85, 0.65, 0.45)
+	skin_mat.roughness = 0.8
+	
+	# --- Torso ---
+	_torso = MeshInstance3D.new()
+	_torso.name = "Torso"
+	var torso_mesh = BoxMesh.new()
+	torso_mesh.size = Vector3(0.5, 0.7, 0.3)
+	_torso.mesh = torso_mesh
+	_torso.material_override = team_color_material
+	_torso.position = Vector3(0, 0.9, 0)
+	_model_root.add_child(_torso)
+	
+	# --- Head ---
+	_head = MeshInstance3D.new()
+	_head.name = "Head"
+	var head_mesh = BoxMesh.new()
+	head_mesh.size = Vector3(0.35, 0.35, 0.35)
+	_head.mesh = head_mesh
+	_head.material_override = skin_mat
+	_head.position = Vector3(0, 0.55, 0) # Relative to torso center
+	_torso.add_child(_head)
+	
+	# --- Jersey Numbers ---
+	_jersey_label_front = Label3D.new()
+	_jersey_label_front.name = "JerseyNumber_Front"
+	_jersey_label_front.text = str(jersey_number)
+	_jersey_label_front.font_size = 48
+	_jersey_label_front.outline_size = 12
+	_jersey_label_front.position = Vector3(0, 0, -0.16)
+	_jersey_label_front.rotation_degrees = Vector3(0, 180, 0)
+	_torso.add_child(_jersey_label_front)
+	
+	_jersey_label_back = Label3D.new()
+	_jersey_label_back.name = "JerseyNumber_Back"
+	_jersey_label_back.text = str(jersey_number)
+	_jersey_label_back.font_size = 64
+	_jersey_label_back.outline_size = 16
+	_jersey_label_back.position = Vector3(0, 0, 0.16)
+	_torso.add_child(_jersey_label_back)
+	
+	# --- Accent color for visor and details ---
 	var accent_color = Color(0.0, 1.0, 1.0) if team_index == 0 else Color(1.0, 1.0, 0.0)
 	var accent_mat = StandardMaterial3D.new()
 	accent_mat.albedo_color = accent_color
@@ -121,68 +184,74 @@ func _setup_visuals() -> void:
 	accent_mat.emission = accent_color
 	accent_mat.emission_energy_multiplier = 3.0
 	
-	# Skin-tone material for arms
-	var skin_mat = StandardMaterial3D.new()
-	skin_mat.albedo_color = Color(0.85, 0.65, 0.45)
-	skin_mat.roughness = 0.8
-	
-	# --- Visor (front-facing stripe so you can see direction) ---
+	# Add visor to head
 	var visor = MeshInstance3D.new()
 	visor.name = "Visor"
 	var visor_mesh = BoxMesh.new()
-	visor_mesh.size = Vector3(0.3, 0.12, 0.05)
+	visor_mesh.size = Vector3(0.25, 0.08, 0.05)
 	visor.mesh = visor_mesh
 	visor.material_override = accent_mat
-	visor.position = Vector3(0, 1.2, -0.34)
-	add_child(visor)
+	visor.position = Vector3(0, 0.05, -0.17)
+	_head.add_child(visor)
 	
-	# --- Arms (left and right with pivot nodes for animation) ---
+	# --- Arms ---
 	for side in [-1, 1]:
 		var arm_pivot = Node3D.new()
 		arm_pivot.name = "ArmPivot_L" if side == -1 else "ArmPivot_R"
-		arm_pivot.position = Vector3(side * 0.38, 1.0, 0)  # Shoulder joint
-		add_child(arm_pivot)
+		arm_pivot.position = Vector3(side * 0.3, 0.25, 0) # Shoulder joint relative to torso
+		_torso.add_child(arm_pivot)
 		
-		if side == -1:
-			_left_arm_pivot = arm_pivot
-		else:
-			_right_arm_pivot = arm_pivot
+		if side == -1: _left_arm_pivot = arm_pivot
+		else: _right_arm_pivot = arm_pivot
 		
-		# Upper arm
-		var upper_arm = MeshInstance3D.new()
-		upper_arm.name = "UpperArm"
-		var ua_mesh = CylinderMesh.new()
-		ua_mesh.top_radius = 0.07
-		ua_mesh.bottom_radius = 0.06
-		ua_mesh.height = 0.35
-		upper_arm.mesh = ua_mesh
-		upper_arm.material_override = skin_mat
-		upper_arm.position = Vector3(0, -0.18, 0)  # Hangs down from pivot
-		arm_pivot.add_child(upper_arm)
+		var arm_mesh = MeshInstance3D.new()
+		var am = CylinderMesh.new()
+		am.top_radius = 0.07
+		am.bottom_radius = 0.05
+		am.height = 0.6
+		arm_mesh.mesh = am
+		arm_mesh.material_override = skin_mat
+		arm_mesh.position = Vector3(0, -0.3, 0)
+		arm_pivot.add_child(arm_mesh)
 		
-		# Forearm
-		var forearm = MeshInstance3D.new()
-		forearm.name = "Forearm"
-		var fa_mesh = CylinderMesh.new()
-		fa_mesh.top_radius = 0.06
-		fa_mesh.bottom_radius = 0.05
-		fa_mesh.height = 0.3
-		forearm.mesh = fa_mesh
-		forearm.material_override = skin_mat
-		forearm.position = Vector3(0, -0.5, 0)  # Below upper arm
-		arm_pivot.add_child(forearm)
-		
-		# Hand (small sphere)
 		var hand = MeshInstance3D.new()
-		hand.name = "Hand"
-		var hand_mesh = SphereMesh.new()
-		hand_mesh.radius = 0.06
-		hand_mesh.height = 0.12
-		hand.mesh = hand_mesh
+		var hm = SphereMesh.new()
+		hm.radius = 0.06
+		hm.height = 0.12
+		hand.mesh = hm
 		hand.material_override = skin_mat
-		hand.position = Vector3(0, -0.68, 0)
-		arm_pivot.add_child(hand)
-
+		hand.position = Vector3(0, -0.32, 0) # End of arm_mesh
+		arm_mesh.add_child(hand)
+	
+	# --- Legs ---
+	for side in [-1, 1]:
+		var leg_pivot = Node3D.new()
+		leg_pivot.name = "LegPivot_L" if side == -1 else "LegPivot_R"
+		leg_pivot.position = Vector3(side * 0.15, -0.35, 0) # Hip joint relative to torso
+		_torso.add_child(leg_pivot)
+		
+		if side == -1: _leg_pivot_l = leg_pivot
+		else: _leg_pivot_r = leg_pivot
+		
+		var leg_mesh = MeshInstance3D.new()
+		var lm = CylinderMesh.new()
+		lm.top_radius = 0.1
+		lm.bottom_radius = 0.07
+		lm.height = 0.6
+		leg_mesh.mesh = lm
+		leg_mesh.material_override = skin_mat
+		leg_mesh.position = Vector3(0, -0.3, 0)
+		leg_pivot.add_child(leg_mesh)
+		
+		var foot = MeshInstance3D.new()
+		var fm = BoxMesh.new()
+		fm.size = Vector3(0.12, 0.08, 0.22)
+		foot.mesh = fm
+		var foot_mat = StandardMaterial3D.new()
+		foot_mat.albedo_color = Color(0.1, 0.1, 0.1) # Black sneakers
+		foot.material_override = foot_mat
+		foot.position = Vector3(0, -0.3, -0.05) # Relative to leg_mesh center
+		leg_mesh.add_child(foot)
 	
 	# --- Human player ring indicator ---
 	if is_human:
@@ -203,7 +272,7 @@ func _setup_visuals() -> void:
 		ring.position = Vector3(0, 0.05, 0)
 		add_child(ring)
 
-	# --- Buff Indicator Ring (hidden by default) ---
+	# --- Buff Indicator Ring ---
 	_buff_indicator_mesh = MeshInstance3D.new()
 	_buff_indicator_mesh.name = "BuffRing"
 	var buff_mesh = TorusMesh.new()
@@ -214,7 +283,7 @@ func _setup_visuals() -> void:
 	_buff_indicator_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_buff_indicator_mat.emission_enabled = true
 	_buff_indicator_mesh.material_override = _buff_indicator_mat
-	_buff_indicator_mesh.position = Vector3(0, 0.06, 0) # Just above human ring
+	_buff_indicator_mesh.position = Vector3(0, 0.06, 0)
 	_buff_indicator_mesh.visible = false
 	add_child(_buff_indicator_mesh)
 
@@ -303,6 +372,7 @@ func _physics_process(delta: float) -> void:
 		State.PASSING:
 			_process_movement(delta)
 		State.CELEBRATING:
+			_update_animations(delta)
 			celebrate_timer -= delta
 			if celebrate_timer <= 0:
 				current_state = State.IDLE
@@ -310,6 +380,8 @@ func _physics_process(delta: float) -> void:
 			if not is_on_floor():
 				velocity.y -= 20.0 * delta
 			move_and_slide()
+	
+	_update_animations(delta)
 	
 	# Update facing
 	if input_aim.length() > 0.1:
@@ -325,15 +397,101 @@ func _physics_process(delta: float) -> void:
 	
 	# Ball follow
 	if has_ball and held_ball:
-		var ball_offset = facing_direction * 0.8 + Vector3(0, 0.8, 0)
+		# Procedural dribble offset
+		var dribble_y = 0.0
+		var dribble_fwd = 0.8
+		var dribble_side = 0.4
+		
+		var freq = 10.0 if current_state in [State.RUNNING, State.SPRINTING] else 5.0
+		var amp = 0.5
+		var bounce = abs(sin(_dribble_time * freq))
+		dribble_y = 0.6 + bounce * amp
+		
+		# Move ball slightly side to side
+		var side_swing = sin(_dribble_time * freq * 0.5) * 0.2
+		
+		var right_vec = facing_direction.cross(Vector3.UP).normalized()
+		var ball_offset = facing_direction * dribble_fwd + Vector3(0, dribble_y, 0) + right_vec * (dribble_side + side_swing)
+		
 		held_ball.global_position = global_position + ball_offset
 		held_ball.linear_velocity = Vector3.ZERO
 		held_ball.angular_velocity = Vector3.ZERO
+		
+		# Rotate ball slightly as if dribbling
+		held_ball.rotation.x += delta * 15.0
 	
 	# --- Floor safety: prevent falling through the court ---
 	if global_position.y < -1.0:
 		global_position.y = 0.5
 		velocity.y = 0
+
+func _update_animations(delta: float) -> void:
+	if not _model_root: return
+	
+	_anim_time += delta
+	
+	var horizontal_vel = Vector3(velocity.x, 0, velocity.z).length()
+	var is_moving = horizontal_vel > 0.5
+	
+	if current_state == State.KNOCKED_DOWN:
+		# Handled by tween in receive_tackle, but let's reset rotations
+		_leg_pivot_l.rotation.x = 0
+		_leg_pivot_r.rotation.x = 0
+		return
+		
+	if is_moving:
+		# Run cycle
+		var speed_mult = clampf(horizontal_vel * 1.5, 5.0, 15.0)
+		var cycle = _anim_time * speed_mult
+		
+		# Leg swing
+		var leg_swing = sin(cycle) * 0.6
+		_leg_pivot_l.rotation.x = leg_swing
+		_leg_pivot_r.rotation.x = -leg_swing
+		
+		# Torso bob & lean
+		_torso.position.y = 0.9 + abs(sin(cycle * 2.0)) * 0.08
+		_torso.rotation.z = -sin(cycle) * 0.05 # Side to side lean
+		_torso.rotation.x = 0.2 # Lean forward
+		
+		# Arms swing in opposition to legs (if not shooting/passing)
+		if current_state in [State.RUNNING, State.SPRINTING, State.IDLE]:
+			_left_arm_pivot.rotation.x = -leg_swing * 0.8
+			_right_arm_pivot.rotation.x = leg_swing * 0.8
+	else:
+		# Idle breathing bob
+		var idle_cycle = _anim_time * 2.5
+		_torso.position.y = lerp(_torso.position.y, 0.9 + sin(idle_cycle) * 0.03, 0.1)
+		_torso.rotation.x = lerp_angle(_torso.rotation.x, 0.0, 0.1)
+		_torso.rotation.z = lerp_angle(_torso.rotation.z, 0.0, 0.1)
+		
+		# Reset legs
+		_leg_pivot_l.rotation.x = lerp_angle(_leg_pivot_l.rotation.x, 0.0, 0.1)
+		_leg_pivot_r.rotation.x = lerp_angle(_leg_pivot_r.rotation.x, 0.0, 0.1)
+		
+		# Gentle arm sway
+		if current_state == State.IDLE:
+			_left_arm_pivot.rotation.x = lerp_angle(_left_arm_pivot.rotation.x, sin(idle_cycle) * 0.1, 0.1)
+			_right_arm_pivot.rotation.x = lerp_angle(_right_arm_pivot.rotation.x, sin(idle_cycle) * 0.1, 0.1)
+	
+	if current_state == State.CELEBRATING:
+		# Raise arms!
+		_left_arm_pivot.rotation.x = -2.5
+		_right_arm_pivot.rotation.x = -2.5
+		# Jump logic? 
+		_torso.position.y += 0.2 # Float a bit
+		
+	# --- Dribbling Arm Animation ---
+	if has_ball:
+		_dribble_time += delta
+		# Force right arm to follow the ball
+		var freq = 10.0 if current_state in [State.RUNNING, State.SPRINTING] else 5.0
+		var bounce = abs(sin(_dribble_time * freq))
+		# Simple rotation to make the hand reach down/up with the ball
+		_right_arm_pivot.rotation.x = 0.5 - (bounce * 1.2)
+		_right_arm_pivot.rotation.z = 0.4 # Reach out to the side
+	else:
+		_dribble_time = 0.0
 
 func _process_movement(delta: float) -> void:
 	var speed = sprint_speed if input_sprint else move_speed
@@ -779,12 +937,12 @@ func receive_tackle(attacker: CharacterBody3D, direction: Vector3) -> void:
 				if gm and gm.has_method("record_stat"):
 					gm.record_stat(attacker.team_index, attacker.roster_index, "steals")
 	was_tackled.emit()
-	# Visual: flatten mesh to show player is down
-	if mesh:
+	# Visual: flatten model to show player is down
+	if _model_root:
 		var tween = create_tween()
-		tween.tween_property(mesh, "scale", Vector3(1.3, 0.3, 1.3), 0.15)
+		tween.tween_property(_model_root, "scale", Vector3(1.3, 0.3, 1.3), 0.15)
 		tween.tween_interval(knockdown_timer - 0.3)
-		tween.tween_property(mesh, "scale", Vector3.ONE, 0.3)
+		tween.tween_property(_model_root, "scale", Vector3.ONE, 0.3)
 	
 	# Lose pending points!
 	scatter_pending_points()
@@ -807,11 +965,11 @@ func receive_hazard_hit(knockback_dir: Vector3, force: float, drop_ball: bool = 
 	scatter_pending_points()
 	
 	# Visual knockdown
-	if mesh:
+	if _model_root:
 		var tween = create_tween()
-		tween.tween_property(mesh, "scale", Vector3(1.3, 0.3, 1.3), 0.15)
+		tween.tween_property(_model_root, "scale", Vector3(1.3, 0.3, 1.3), 0.15)
 		tween.tween_interval(knockdown_timer - 0.3)
-		tween.tween_property(mesh, "scale", Vector3.ONE, 0.3)
+		tween.tween_property(_model_root, "scale", Vector3.ONE, 0.3)
 
 func apply_buff(buff_type: String, duration: float = 8.0) -> void:
 	## Apply a power-up buff. Reverts previous buff if any.
