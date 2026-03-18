@@ -14,12 +14,27 @@ var line_material: StandardMaterial3D
 var hoop_material: StandardMaterial3D
 var _current_theme: CourtTheme = null
 var _floor_mesh: MeshInstance3D = null  # Stored so we can swap materials on theme change
+var _border_mat: StandardMaterial3D = null  # Perimeter stripe material, updated on theme change
 
-func apply_theme(theme: CourtTheme) -> void:
+# Team colors (set from game_manager via apply_theme)
+var _team0_color: Color = Color(0.2, 0.5, 1.0)
+var _team1_color: Color = Color(1.0, 0.3, 0.2)
+
+# Accent elements updated per theme
+var _center_logo_mat: StandardMaterial3D = null
+var _crash_pad_mats: Array = []
+
+# Container for the active environment geometry (gym / cage / rooftop / garage)
+var _env_root: Node3D = null
+
+
+func apply_theme(theme: CourtTheme, team0_color: Color = Color(0.2, 0.5, 1.0), team1_color: Color = Color(1.0, 0.3, 0.2)) -> void:
 	if theme == null:
 		return
-		
+
 	_current_theme = theme
+	_team0_color = team0_color
+	_team1_color = team1_color
 	
 	if floor_material:
 		floor_material.albedo_color = theme.floor_color
@@ -49,13 +64,39 @@ func apply_theme(theme: CourtTheme) -> void:
 			if floor_material:
 				floor_material.albedo_color = theme.floor_color
 		
+	# Border stripe — darken the floor colour by 40% for a clean contrast band.
+	# On very dark themes the floor is near-black, so clamp to a visible minimum.
+	if _border_mat:
+		var bc = theme.floor_color.darkened(0.40)
+		# Ensure the stripe is always at least slightly visible against the floor.
+		bc = bc.lerp(Color(0.12, 0.06, 0.02), 0.30)
+		_border_mat.albedo_color = bc
+		# On glow themes add a faint emission so the border reads under coloured light.
+		_border_mat.emission_enabled = theme.glow_enabled
+		if theme.glow_enabled:
+			_border_mat.emission = bc
+			_border_mat.emission_energy_multiplier = 0.4
+
 	# Apply lighting changes immediately
 	_apply_theme_lighting()
-	
+
+	# Update center court logo color
+	if _center_logo_mat:
+		var lc = theme.line_color
+		_center_logo_mat.albedo_color = Color(lc.r, lc.g, lc.b, 0.12)
+		_center_logo_mat.emission = lc * 0.08
+
+	# Update crash pad colors to match teams
+	if _crash_pad_mats.size() >= 2:
+		_crash_pad_mats[0].albedo_color = _team0_color.darkened(0.35)
+		_crash_pad_mats[1].albedo_color = _team1_color.darkened(0.35)
+
 	# Handle crowd and bleachers
 	_build_bleachers_and_crowd(theme)
 
-	
+	# Rebuild environment geometry if the theme requires a non-standard court
+	_rebuild_environment(theme)
+
 	# Spawn hazards
 	_spawn_theme_hazards(theme)
 
@@ -81,12 +122,12 @@ func _build_bleachers_and_crowd(theme: CourtTheme) -> void:
 	bleacher_mat.roughness = 0.7
 	
 	# A helper to build a section of bleachers
-	var build_section = func(pos: Vector3, size: Vector3, rot: Vector3, label: String):
+	var build_section = func(pos: Vector3, size: Vector3, rot: Vector3, label: String, fan_color: Color):
 		var sec_node = Node3D.new()
 		sec_node.name = "Section_" + label
 		sec_node.position = pos
 		sec_node.rotation = rot
-		
+
 		# Build steps
 		for i in range(step_count):
 			var step_mesh = MeshInstance3D.new()
@@ -99,49 +140,55 @@ func _build_bleachers_and_crowd(theme: CourtTheme) -> void:
 			# Move back in X and up in Y for each step
 			step_mesh.position = Vector3(i * step_width, step_height * (i + 1) / 2.0, 0)
 			sec_node.add_child(step_mesh)
-			
+
 			# Spawn some crowd members on this step
-			_spawn_3d_crowd_on_step(sec_node, i * step_width, step_height * (i + 1), size.z)
-			
+			_spawn_3d_crowd_on_step(sec_node, i * step_width, step_height * (i + 1), size.z, fan_color)
+
 		bleachers_node.add_child(sec_node)
-	
+
 	var half_w = court_width / 2.0
 	var half_l = court_length / 2.0
 	var start_dist_x = half_w + wall_thickness + 3.0  # Pushed back by 3m to leave walking room
-	var start_dist_z = half_l + wall_thickness + 3.5  # Pushed back by 3.5m to leave room behind baskets
-	
-	# East Wall (Facing -X)
-	build_section.call(Vector3(start_dist_x, 0, 0), Vector3(step_width * step_count, 0, court_length + 4.0), Vector3(0, 0, 0), "East")
-	# West Wall (Facing +X)
-	build_section.call(Vector3(-start_dist_x, 0, 0), Vector3(step_width * step_count, 0, court_length + 4.0), Vector3(0, PI, 0), "West")
-	# North Wall (Facing +Z) -> was -PI/2, should be PI/2 to face inwards (from -Z to center)
-	build_section.call(Vector3(0, 0, -start_dist_z), Vector3(step_width * step_count, 0, court_width + 4.0), Vector3(0, PI/2, 0), "North")
-	# South Wall (Facing -Z) -> was PI/2, should be -PI/2 to face inwards (from +Z to center)
-	build_section.call(Vector3(0, 0, start_dist_z), Vector3(step_width * step_count, 0, court_width + 4.0), Vector3(0, -PI/2, 0), "South")
+	var start_dist_z = half_l + wall_thickness + 6.5  # End bleachers at z≈22 — well behind the crash pads at z=±18
+
+	# East Wall → team 1 fans, West Wall → team 0 fans
+	# (Matches HUD: team 0 on left/west, team 1 on right/east)
+	build_section.call(Vector3(start_dist_x, 0, 0), Vector3(step_width * step_count, 0, court_length + 4.0), Vector3(0, 0, 0), "East", _team1_color)
+	build_section.call(Vector3(-start_dist_x, 0, 0), Vector3(step_width * step_count, 0, court_length + 4.0), Vector3(0, PI, 0), "West", _team0_color)
+	build_section.call(Vector3(0, 0, -start_dist_z), Vector3(step_width * step_count, 0, court_width + 4.0), Vector3(0, PI/2, 0), "North", _team0_color)
+	build_section.call(Vector3(0, 0, start_dist_z), Vector3(step_width * step_count, 0, court_width + 4.0), Vector3(0, -PI/2, 0), "South", _team1_color)
 	
 	add_child(bleachers_node)
 
-func _spawn_3d_crowd_on_step(parent: Node3D, step_x: float, step_y: float, length_z: float) -> void:
+func _spawn_3d_crowd_on_step(parent: Node3D, step_x: float, step_y: float, length_z: float, fan_color: Color = Color.WHITE) -> void:
 	var crowd_spacing = 1.2
 	var count = int(length_z / crowd_spacing)
 	var start_z = -length_z / 2.0 + crowd_spacing / 2.0
-	
+
 	var spec_mesh = CapsuleMesh.new()
 	spec_mesh.radius = 0.25
 	spec_mesh.height = 1.0
-	
+
 	for i in range(count):
 		# Random chance to have an empty seat
 		if randf() < 0.2: continue
-		
+
 		var spec = MeshInstance3D.new()
 		spec.mesh = spec_mesh
-		
+
 		var mat = StandardMaterial3D.new()
-		# Randomize color - mostly neutral or team colors (we'll just use random bright colors for now)
-		var h = randf()
-		var s = randf_range(0.4, 0.8)
-		var v = randf_range(0.6, 0.9)
+		# 65% of fans wear their team's color, 35% random
+		var h: float
+		var s: float
+		var v: float
+		if randf() < 0.65:
+			h = fan_color.h
+			s = randf_range(0.5, 1.0)
+			v = randf_range(0.55, 1.0)
+		else:
+			h = randf()
+			s = randf_range(0.4, 0.8)
+			v = randf_range(0.6, 0.9)
 		mat.albedo_color = Color.from_hsv(h, s, v)
 		mat.roughness = 0.8
 		spec.material_override = mat
@@ -209,9 +256,13 @@ func _spawn_theme_hazards(theme: CourtTheme) -> void:
 func _ready() -> void:
 	add_to_group("court_builder")
 	_create_materials()
+	_build_gym_environment()  # outer shell first so it renders behind everything else
 	_build_floor()
+	_build_court_border()
 	_build_walls()
 	_build_court_lines()
+	_build_center_logo()
+	_build_crash_pads()
 	_build_hoops()
 	_build_lighting()
 
@@ -222,13 +273,13 @@ func _create_materials() -> void:
 	floor_material.metallic = 0.8
 	floor_material.roughness = 0.4
 	
-	# Walls — chain-link industrial  
+	# Walls — painted concrete / cinder block
 	wall_material = StandardMaterial3D.new()
-	wall_material.albedo_color = Color(0.15, 0.15, 0.2)
-	wall_material.metallic = 0.9
-	wall_material.roughness = 0.3
+	wall_material.albedo_color = Color(0.70, 0.69, 0.67)
+	wall_material.metallic = 0.0
+	wall_material.roughness = 0.95
 	wall_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	wall_material.albedo_color.a = 0.7
+	wall_material.albedo_color.a = 0.92
 	
 	# Court lines — neon cyan
 	line_material = StandardMaterial3D.new()
@@ -246,30 +297,299 @@ func _create_materials() -> void:
 	hoop_material.metallic = 0.7
 	hoop_material.roughness = 0.3
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  GYM ENVIRONMENT  (outer building shell built around the bleachers)
+# ─────────────────────────────────────────────────────────────────────────────
+#  Layout (all half-distances from center):
+#    Court play area   x: ±8.0   z: ±15.0
+#    Extended floor    x: ±8.0   z: ±17.0
+#    Bleachers (side)  x: 11.5 → 16.5
+#    Bleachers (end)   z: 19.0 → 21.5
+#    Gym outer walls   x: ±18.5  z: ±23.0
+#    Gym height        y:  10.0
+
+func _build_gym_environment() -> void:
+	# Create environment container so it can be swapped on theme change
+	_env_root = Node3D.new()
+	_env_root.name = "GymEnvironment"
+	add_child(_env_root)
+
+	var GHX  = 18.5   # gym half-width  — side walls at x = ±GHX
+	var GHZ  = 29.0   # gym half-length — end walls at z = ±GHZ (bleachers end at ≈±27, 2m gap to wall)
+	var GH   = 10.0   # ceiling height
+	var GWT  = 0.45   # gym wall thickness
+
+	# ── Shared materials ─────────────────────────────────────────────────────
+	var wall_mat = StandardMaterial3D.new()
+	wall_mat.albedo_color = Color(0.76, 0.74, 0.72)   # painted cinder block
+	wall_mat.roughness    = 0.93
+	wall_mat.metallic     = 0.0
+
+	var runoff_mat = StandardMaterial3D.new()
+	runoff_mat.albedo_color = Color(0.71, 0.57, 0.38) # warm maple hardwood runoff
+	runoff_mat.roughness    = 0.52
+	runoff_mat.metallic     = 0.04
+
+	# ── Runoff floor — four strips that hug the court edges ──────────────────
+	# Each strip covers only the area the court floor (x:±8 z:±17) does NOT reach,
+	# so there is zero overlap and no z-fighting with the court surface.
+	#   North/South end strips — full gym width, from court edge to gym wall
+	#   East/West side strips  — full court length, from court edge to gym wall
+	var cf_hw = court_width  / 2.0   # 8.0  — court floor half-width
+	var cf_hl = court_length / 2.0 + 2.0  # 17.0 — court floor half-length (incl. 2m extension)
+	var floor_y   = -0.095  # just above the court floor's y = -0.1 so it doesn't z-fight
+	var floor_thk = 0.16
+	var inner_w = (GHX - GWT) * 2.0  # usable gym width between the walls
+	var end_d   = GHZ - GWT - cf_hl  # depth of each end strip (≈ 5.55 m)
+	var side_w  = GHX - GWT - cf_hw  # width of each side strip (≈ 10.05 m)
+
+	# North end
+	_gym_box("RunoffN", Vector3(0, floor_y, -(cf_hl + end_d / 2.0)),
+		Vector3(inner_w, floor_thk, end_d), runoff_mat)
+	# South end
+	_gym_box("RunoffS", Vector3(0, floor_y,  (cf_hl + end_d / 2.0)),
+		Vector3(inner_w, floor_thk, end_d), runoff_mat)
+	# East side (spans only the court-length band)
+	_gym_box("RunoffE", Vector3( cf_hw + side_w / 2.0, floor_y, 0),
+		Vector3(side_w, floor_thk, cf_hl * 2.0), runoff_mat)
+	# West side
+	_gym_box("RunoffW", Vector3(-(cf_hw + side_w / 2.0), floor_y, 0),
+		Vector3(side_w, floor_thk, cf_hl * 2.0), runoff_mat)
+
+	# ── Four outer gym walls (visual + collision) ────────────────────────────
+	_gym_box("GymWall_N", Vector3(0,     GH / 2,  -GHZ), Vector3(GHX * 2.0, GH, GWT), wall_mat)
+	_gym_box("GymWall_S", Vector3(0,     GH / 2,   GHZ), Vector3(GHX * 2.0, GH, GWT), wall_mat)
+	_gym_box("GymWall_E", Vector3( GHX,  GH / 2,   0.0), Vector3(GWT, GH, GHZ * 2.0), wall_mat)
+	_gym_box("GymWall_W", Vector3(-GHX,  GH / 2,   0.0), Vector3(GWT, GH, GHZ * 2.0), wall_mat)
+	# Collision bodies for the gym walls — these are the physical boundary of
+	# the entire playing environment now that court walls have no collision.
+	for _gw in [
+		[Vector3(0,    GH / 2, -GHZ), Vector3(GHX * 2.0, GH, GWT)],  # North
+		[Vector3(0,    GH / 2,  GHZ), Vector3(GHX * 2.0, GH, GWT)],  # South
+		[Vector3( GHX, GH / 2,  0.0), Vector3(GWT, GH, GHZ * 2.0)],  # East
+		[Vector3(-GHX, GH / 2,  0.0), Vector3(GWT, GH, GHZ * 2.0)],  # West
+	]:
+		var _gbody = StaticBody3D.new()
+		_gbody.position    = _gw[0]
+		_gbody.collision_layer = 1
+		var _gcol   = CollisionShape3D.new()
+		var _gshape = BoxShape3D.new()
+		_gshape.size = _gw[1]
+		_gcol.shape  = _gshape
+		_gbody.add_child(_gcol)
+		_env_root.add_child(_gbody)
+
+	# Horizontal accent stripe at mid-wall height on all four walls
+	var stripe_mat = StandardMaterial3D.new()
+	stripe_mat.albedo_color = Color(0.62, 0.60, 0.58)
+	stripe_mat.roughness    = 0.90
+	_gym_box("StripeN", Vector3(0,    3.6, -GHZ + GWT/2 + 0.01), Vector3(GHX*2, 0.22, 0.04), stripe_mat)
+	_gym_box("StripeS", Vector3(0,    3.6,  GHZ - GWT/2 - 0.01), Vector3(GHX*2, 0.22, 0.04), stripe_mat)
+	_gym_box("StripeE", Vector3( GHX - GWT/2 - 0.01, 3.6, 0), Vector3(0.04, 0.22, GHZ*2), stripe_mat)
+	_gym_box("StripeW", Vector3(-GHX + GWT/2 + 0.01, 3.6, 0), Vector3(0.04, 0.22, GHZ*2), stripe_mat)
+
+	# No ceiling — the game camera sits above y≈10 so a ceiling box would block
+	# the entire view of the court.  The tall walls provide enough gym enclosure.
+
+	# ── Foam padding strip at base of end walls ───────────────────────────────
+	# (Dark gray, 1.6m tall, mounted flush to the end walls)
+	var foam_mat = StandardMaterial3D.new()
+	foam_mat.albedo_color = Color(0.26, 0.26, 0.26)
+	foam_mat.roughness    = 0.97
+	_gym_box("FoamPad_N", Vector3(0, 0.80, -(GHZ - GWT * 0.5 - 0.06)), Vector3(GHX * 2.0 - 1.0, 1.60, 0.18), foam_mat)
+	_gym_box("FoamPad_S", Vector3(0, 0.80,  (GHZ - GWT * 0.5 - 0.06)), Vector3(GHX * 2.0 - 1.0, 1.60, 0.18), foam_mat)
+	# Thinner strip on side walls too
+	_gym_box("FoamPad_E", Vector3( GHX - GWT * 0.5 - 0.06, 0.80, 0), Vector3(0.18, 1.60, GHZ * 2.0 - 1.0), foam_mat)
+	_gym_box("FoamPad_W", Vector3(-GHX + GWT * 0.5 + 0.06, 0.80, 0), Vector3(0.18, 1.60, GHZ * 2.0 - 1.0), foam_mat)
+
+	# ── High windows on end walls ─────────────────────────────────────────────
+	var win_mat = StandardMaterial3D.new()
+	win_mat.albedo_color     = Color(0.72, 0.88, 0.98, 0.52)
+	win_mat.transparency     = BaseMaterial3D.TRANSPARENCY_ALPHA
+	win_mat.roughness        = 0.05
+	win_mat.metallic         = 0.30
+	win_mat.emission_enabled = true
+	win_mat.emission         = Color(0.7, 0.85, 1.0) * 0.18  # mild daylight glow
+	var win_xs = [-13.5, -9.0, -4.5, 4.5, 9.0, 13.5]
+	for wz_side in [-GHZ + 0.02, GHZ - 0.02]:
+		for wxi in range(win_xs.size()):
+			var w = MeshInstance3D.new()
+			w.name = "Win_%s_%d" % [str(wz_side), wxi]
+			var wb = BoxMesh.new()
+			wb.size = Vector3(3.0, 1.6, 0.06)
+			w.mesh = wb
+			w.material_override = win_mat
+			w.position = Vector3(win_xs[wxi], GH - 1.5, wz_side)
+			_env_root.add_child(w)
+	# Side-wall windows (visible above the bleachers between light banks)
+	var side_win_zs = [-12.0, -6.0, 0.0, 6.0, 12.0]
+	for wx_side in [-GHX + 0.02, GHX - 0.02]:
+		for wzi in range(side_win_zs.size()):
+			var w = MeshInstance3D.new()
+			w.name = "SideWin_%s_%d" % [str(wx_side), wzi]
+			var wb = BoxMesh.new()
+			wb.size = Vector3(0.06, 1.4, 2.6)
+			w.mesh = wb
+			w.material_override = win_mat
+			w.position = Vector3(wx_side, GH - 1.5, side_win_zs[wzi])
+			_env_root.add_child(w)
+
+	# ── Championship banners — mounted flush to the inner face of the side walls ─
+	# wall_inner_x = inner face of east wall = GHX - GWT
+	_build_gym_banners(GH, GHX - GWT)
+
+## Thin helper — creates a named MeshInstance3D box with the given material.
+## Always adds to _env_root when it exists, otherwise falls back to self.
+func _gym_box(n: String, pos: Vector3, sz: Vector3, mat: StandardMaterial3D) -> void:
+	var node = MeshInstance3D.new()
+	node.name = n
+	var b = BoxMesh.new()
+	b.size = sz
+	node.mesh = b
+	node.material_override = mat
+	node.position = pos
+	if _env_root:
+		_env_root.add_child(node)
+	else:
+		add_child(node)
+
+## Championship-style vertical banners mounted flat against the inner face of the side walls.
+## wall_inner_x is the inner face X of the east wall (positive value); west is mirrored.
+func _build_gym_banners(gym_h: float, wall_inner_x: float) -> void:
+	# Each entry: [z_position, x_side (-1=west / +1=east), primary Color]
+	var banner_data: Array = [
+		[-12.0, -1, Color(0.72, 0.12, 0.08)],  # crimson
+		[ -7.0, -1, Color(0.12, 0.18, 0.62)],  # navy
+		[ -2.0, -1, Color(0.66, 0.50, 0.08)],  # gold
+		[  3.5, -1, Color(0.10, 0.36, 0.12)],  # forest green
+		[  9.0, -1, Color(0.55, 0.10, 0.42)],  # purple
+		[ -9.5,  1, Color(0.50, 0.22, 0.06)],  # maroon
+		[ -4.0,  1, Color(0.10, 0.40, 0.52)],  # teal
+		[  1.5,  1, Color(0.66, 0.50, 0.08)],  # gold
+		[  7.5,  1, Color(0.72, 0.12, 0.08)],  # crimson
+	]
+	var banner_h   = 2.8
+	var banner_w   = 0.90
+	var banner_thk = 0.06
+	# Place banner centre so its outward face sits flush with the wall inner face.
+	# East wall inner face is at +wall_inner_x; banner centre pulls inward by half its thickness.
+	var wall_x = wall_inner_x - banner_thk * 0.5
+
+	for bd in banner_data:
+		var z_pos: float  = float(bd[0])
+		var x_pos: float  = float(bd[1]) * wall_x   # ± mirrors onto east / west wall
+		var col: Color    = bd[2]
+		var bi: int       = banner_data.find(bd)
+
+		# Main coloured panel — lies flat against the wall
+		var bm = StandardMaterial3D.new()
+		bm.albedo_color = col
+		bm.roughness    = 0.82
+		_gym_box("Banner_%d" % bi, Vector3(x_pos, gym_h - 1.6, z_pos),
+			Vector3(banner_thk, banner_h, banner_w), bm)
+
+		# White header stripe across the top
+		var hm = StandardMaterial3D.new()
+		hm.albedo_color = Color(0.96, 0.96, 0.95)
+		hm.roughness    = 0.75
+		_gym_box("BannerHead_%d" % bi, Vector3(x_pos, gym_h - 0.14, z_pos),
+			Vector3(banner_thk + 0.01, 0.28, banner_w + 0.02), hm)
+
+		# Thin white border line down each long side (left + right edge)
+		for side in [-1, 1]:
+			var em = StandardMaterial3D.new()
+			em.albedo_color = Color(0.96, 0.96, 0.95, 0.7)
+			em.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			em.roughness    = 0.75
+			_gym_box("BannerEdge_%d_%d" % [bi, side],
+				Vector3(x_pos, gym_h - 1.6, z_pos + side * (banner_w * 0.5 - 0.03)),
+				Vector3(banner_thk + 0.01, banner_h, 0.05), em)
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 func _build_floor() -> void:
 	# Floor extends 2m beyond court bounds on each end for inbound passers
 	var floor_z_extent = court_length + 4.0
-	
+	# Floor extends 3m past each sideline so the wood panelling is clearly visible
+	# beyond the east/west boundary lines (sidelines sit at x = ±court_width/2 = ±8).
+	var floor_x_extent = court_width + 6.0   # 16 + 6 = 22 → sidelines at ±8, panel edge at ±11
+
 	var floor_mesh = MeshInstance3D.new()
 	floor_mesh.name = "FloorMesh"
 	var box = BoxMesh.new()
-	box.size = Vector3(court_width, 0.2, floor_z_extent)
+	box.size = Vector3(floor_x_extent, 0.2, floor_z_extent)
 	floor_mesh.mesh = box
 	floor_mesh.material_override = floor_material
 	floor_mesh.position = Vector3(0, -0.1, 0)
 	add_child(floor_mesh)
 	_floor_mesh = floor_mesh
 	
-	# Floor collision
+	# Floor collision — deliberately wider/longer than the visual court tile so
+	# players have solid ground on all four sides of the boundary line.
+	# Matches the inner face of the gym outer walls (GHX=18.5, GWT=0.45 → 18.05;
+	# GHZ=29, GWT=0.45 → 28.55) so the entire runoff area is walkable.
 	var floor_body = StaticBody3D.new()
 	var floor_col = CollisionShape3D.new()
 	var floor_shape = BoxShape3D.new()
-	floor_shape.size = Vector3(court_width, 0.2, floor_z_extent)
+	floor_shape.size = Vector3(36.1, 0.2, 57.1)   # (18.05 * 2) × (28.55 * 2)
 	floor_col.shape = floor_shape
 	floor_body.position = Vector3(0, -0.1, 0)
 	floor_body.add_child(floor_col)
-	floor_body.collision_layer = 1  # Court layer
+	floor_body.collision_layer = 1
 	add_child(floor_body)
+
+func _build_court_border() -> void:
+	## Solid stripe running around the outside of the court boundary.
+	## Inner edge of each strip is flush with the boundary line — no bleed onto court.
+	## Strips sit at y=0.001, just above the floor, to avoid z-fighting.
+	const STRIPE_W  := 1.4    # stripe width (entirely outside the boundary line)
+	const STRIPE_H  := 0.012  # thin slab height
+	const STRIPE_Y  := 0.001
+
+	_border_mat = StandardMaterial3D.new()
+	_border_mat.albedo_color = Color(0.20, 0.09, 0.03)  # default: dark walnut
+	_border_mat.roughness    = 0.82
+	_border_mat.metallic     = 0.0
+
+	var half_w   = court_width  / 2.0   # 8.0  — sidelines
+	var half_l   = court_length / 2.0   # 15.0 — baselines
+	var floor_hw = half_w + 3.0          # 11.0 — half of the extended floor (court_width + 6)
+
+	# Shared helper
+	var make_strip = func(n: String, pos: Vector3, sz: Vector3) -> void:
+		var mi = MeshInstance3D.new()
+		mi.name = n
+		var bm = BoxMesh.new()
+		bm.size = sz
+		mi.mesh = bm
+		mi.material_override = _border_mat
+		mi.position = pos
+		add_child(mi)
+
+	# Each strip's centre is offset outward by half its width so its inner edge
+	# sits exactly on the boundary line with zero overlap onto the court surface.
+
+	# ── North baseline — inner edge at z = -half_l, strip extends further north ──
+	# Full extended-floor width so corners are always covered.
+	make_strip.call("Border_N",
+		Vector3(0, STRIPE_Y, -(half_l + STRIPE_W * 0.5)),
+		Vector3(floor_hw * 2.0, STRIPE_H, STRIPE_W))
+
+	# ── South baseline — inner edge at z = +half_l ───────────────────────────
+	make_strip.call("Border_S",
+		Vector3(0, STRIPE_Y,  (half_l + STRIPE_W * 0.5)),
+		Vector3(floor_hw * 2.0, STRIPE_H, STRIPE_W))
+
+	# ── East sideline — inner edge at x = +half_w ────────────────────────────
+	# Length = court_length only; the baseline strips cover the four corners.
+	make_strip.call("Border_E",
+		Vector3( (half_w + STRIPE_W * 0.5), STRIPE_Y, 0),
+		Vector3(STRIPE_W, STRIPE_H, court_length))
+
+	# ── West sideline — inner edge at x = -half_w ────────────────────────────
+	make_strip.call("Border_W",
+		Vector3(-(half_w + STRIPE_W * 0.5), STRIPE_Y, 0),
+		Vector3(STRIPE_W, STRIPE_H, court_length))
 
 func _build_walls() -> void:
 	# Four walls around the court, but North and South have a gap in the middle for inbounders
@@ -291,10 +611,10 @@ func _build_walls() -> void:
 		[Vector3(court_width / 2 + wall_thickness / 2, wall_height / 2, 0), Vector3(wall_thickness, wall_height, court_length)],   # East
 	]
 	
-	for config in wall_configs:
-		var pos: Vector3 = config[0]
-		var size: Vector3 = config[1]
-		
+	for i in range(wall_configs.size()):
+		var pos: Vector3  = wall_configs[i][0]
+		var size: Vector3 = wall_configs[i][1]
+
 		# Visual
 		var wall_mesh = MeshInstance3D.new()
 		var box = BoxMesh.new()
@@ -303,17 +623,10 @@ func _build_walls() -> void:
 		wall_mesh.material_override = wall_material
 		wall_mesh.position = pos
 		add_child(wall_mesh)
-		
-		# Collision
-		var wall_body = StaticBody3D.new()
-		var wall_col = CollisionShape3D.new()
-		var wall_shape = BoxShape3D.new()
-		wall_shape.size = size
-		wall_col.shape = wall_shape
-		wall_body.position = pos
-		wall_body.add_child(wall_col)
-		wall_body.collision_layer = 1  # Court layer
-		add_child(wall_body)
+
+		# No StaticBody3D on any court wall — players can freely step out of bounds
+		# on all four sides.  The physical boundary is the gym outer walls (added
+		# in _build_gym_environment) and the crash-pad bodies at z = ±18.
 
 func _build_court_lines() -> void:
 	var lh = 0.02  # Line height (just above floor)
@@ -627,55 +940,58 @@ func _on_score_trigger(body: Node3D, hoop_team: int) -> void:
 		body._on_hoop_entered(hoop_team)
 
 func _build_lighting() -> void:
-	# Main overhead lights (arena feel)
+	# Primary directional — near-vertical, warm white (like high windows or skylights)
 	var main_light = DirectionalLight3D.new()
 	main_light.name = "MainLight"
-	main_light.rotation_degrees = Vector3(-60, 30, 0)
-	main_light.light_energy = 0.8
-	main_light.light_color = Color(0.9, 0.92, 1.0)
+	main_light.rotation_degrees = Vector3(-80, 15, 0)
+	main_light.light_energy = 0.75
+	main_light.light_color = Color(1.0, 0.97, 0.93)
 	main_light.shadow_enabled = true
 	add_child(main_light)
-	
-	# Ambient fill
+
+	# Ambient — bright warm gray (well-lit gym ceiling)
 	var env = WorldEnvironment.new()
 	env.name = "WorldEnv"
 	var environment = Environment.new()
 	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = Color(0.02, 0.02, 0.06)
-	environment.ambient_light_color = Color(0.15, 0.15, 0.25)
-	environment.ambient_light_energy = 0.5
+	environment.background_color = Color(0.58, 0.58, 0.60)
+	environment.ambient_light_color = Color(0.58, 0.58, 0.60)
+	environment.ambient_light_energy = 0.75
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-
-	environment.glow_enabled = true
-	environment.glow_intensity = 0.8
-	environment.glow_bloom = 0.3
+	environment.glow_enabled = false
 	env.environment = environment
 	add_child(env)
-	
-	# Spot lights on each hoop for drama
+
+	# Hoop spotlights — tight white beams on each basket
 	for i in range(2):
 		var spot = SpotLight3D.new()
 		spot.name = "HoopSpot_%d" % i
 		var z = -court_length / 2 + 1.5 if i == 0 else court_length / 2 - 1.5
 		spot.position = Vector3(0, 8, z)
 		spot.rotation_degrees = Vector3(-90, 0, 0)
-		spot.light_energy = 3.0
-		spot.light_color = Color(1.0, 0.7, 0.3)
+		spot.light_energy = 2.2
+		spot.light_color = Color(1.0, 0.97, 0.93)
 		spot.spot_range = 12.0
-		spot.spot_angle = 35.0
+		spot.spot_angle = 32.0
 		add_child(spot)
-	
-	# Side neon accent lights
-	for side in [-1, 1]:
-		var neon = OmniLight3D.new()
-		neon.name = "NeonAccent_%d" % (side + 2)
-		neon.position = Vector3(side * court_width / 2, 2, 0)
-		neon.light_energy = 1.5
-		neon.light_color = Color(0.0, 0.8, 1.0)
-		neon.omni_range = 8.0
-		add_child(neon)
-		
-	# Setup initial theme lighting if it was provided early
+
+	# Overhead gym lights — 2-column × 3-row grid, like ceiling-mounted fluorescent banks
+	var gx = court_width * 0.28
+	var gz = court_length * 0.3
+	var gym_light_pos = [
+		Vector3(-gx, 7.0, -gz), Vector3(gx, 7.0, -gz),
+		Vector3(-gx, 7.0,  0.0), Vector3(gx, 7.0,  0.0),
+		Vector3(-gx, 7.0,  gz),  Vector3(gx, 7.0,  gz),
+	]
+	for li in range(gym_light_pos.size()):
+		var omni = OmniLight3D.new()
+		omni.name = "GymLight_%d" % li
+		omni.position = gym_light_pos[li]
+		omni.light_energy = 1.1
+		omni.light_color = Color(1.0, 0.97, 0.92)
+		omni.omni_range = 13.0
+		add_child(omni)
+
 	if _current_theme != null:
 		_apply_theme_lighting()
 
@@ -700,12 +1016,75 @@ func _apply_theme_lighting() -> void:
 		if spot:
 			spot.light_color = _current_theme.spotlight_color
 		
-	# Update neon accents
-	for i in range(1, 4):
-		var neon: OmniLight3D = get_node_or_null("NeonAccent_%d" % i)
-		if neon:
-			neon.light_color = _current_theme.line_color
-			neon.light_energy = 2.0 if _current_theme.glow_enabled else 0.8
+	# Update overhead gym lights — tint slightly with theme, boost energy for glow themes
+	for i in range(6):
+		var omni: OmniLight3D = get_node_or_null("GymLight_%d" % i)
+		if omni:
+			omni.light_color = _current_theme.main_light_color
+			omni.light_energy = 1.8 if _current_theme.glow_enabled else 1.1
+
+func _build_center_logo() -> void:
+	var logo = MeshInstance3D.new()
+	logo.name = "CenterLogo"
+	var cyl = CylinderMesh.new()
+	cyl.top_radius = 2.28
+	cyl.bottom_radius = 2.28
+	cyl.height = 0.015
+	cyl.radial_segments = 48
+	logo.mesh = cyl
+	_center_logo_mat = StandardMaterial3D.new()
+	_center_logo_mat.albedo_color = Color(0.0, 0.9, 1.0, 0.12)
+	_center_logo_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_center_logo_mat.emission_enabled = true
+	_center_logo_mat.emission = Color(0.0, 0.9, 1.0) * 0.08
+	logo.material_override = _center_logo_mat
+	logo.position = Vector3(0, 0.011, 0)
+	add_child(logo)
+
+func _build_crash_pads() -> void:
+	_crash_pad_mats.clear()
+	# Pads live in the runoff zone at z = ±(half_court + 3m), i.e. z = ±18.
+	# They also carry a StaticBody3D so players physically stop here instead of at the
+	# baseline wall — giving a real few meters of runoff space to chase down the ball.
+	var pad_z   = court_length / 2.0 + 3.0   # 15 + 3 = 18
+	var pad_w   = 12.0   # narrower than full court; bleachers visible in the gaps
+	var pad_h   = 1.8
+	var pad_d   = 0.3
+	var pad_configs = [
+		[Vector3(0, pad_h / 2.0, -pad_z), 0],  # North runoff
+		[Vector3(0, pad_h / 2.0,  pad_z), 1],  # South runoff
+	]
+	for cfg in pad_configs:
+		var pos: Vector3  = cfg[0]
+		var team_idx: int = cfg[1]
+		var base_color = _team0_color if team_idx == 0 else _team1_color
+		var mat = StandardMaterial3D.new()
+		mat.albedo_color = base_color.darkened(0.35)
+		mat.roughness = 0.95
+		mat.metallic = 0.0
+		_crash_pad_mats.append(mat)
+
+		# Visual
+		var pad = MeshInstance3D.new()
+		pad.name = "CrashPad_%d" % team_idx
+		var box = BoxMesh.new()
+		box.size = Vector3(pad_w, pad_h, pad_d)
+		pad.mesh = box
+		pad.material_override = mat
+		pad.position = pos
+		add_child(pad)
+
+		# Physical barrier replacing the removed end-wall collision
+		var body = StaticBody3D.new()
+		body.name = "CrashPadBody_%d" % team_idx
+		body.position = pos
+		body.collision_layer = 1
+		var col = CollisionShape3D.new()
+		var shape = BoxShape3D.new()
+		shape.size = Vector3(pad_w, pad_h, pad_d)
+		col.shape = shape
+		body.add_child(col)
+		add_child(body)
 
 ## Builds a ShaderMaterial with animated sweeping stripes + ripples for the Cyber Grid court.
 func _build_animated_floor_material(theme: CourtTheme) -> ShaderMaterial:
@@ -866,3 +1245,369 @@ void fragment() {
 	mat.set_shader_parameter("court_width", court_width)
 	mat.set_shader_parameter("court_length", court_length + 4.0)
 	return mat
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  DYNAMIC ENVIRONMENT SYSTEM
+#  apply_theme() calls _rebuild_environment() to swap the outer shell.
+# ─────────────────────────────────────────────────────────────────────────────
+
+func _clear_environment() -> void:
+	if _env_root and is_instance_valid(_env_root):
+		_env_root.queue_free()
+	_env_root = null
+
+## Choose and build the correct environment for the given theme.
+## Called from apply_theme() every time a court theme is applied.
+func _rebuild_environment(theme: CourtTheme) -> void:
+	if theme == null:
+		return
+	var needs_cage    = "cage_walls"   in theme and theme.cage_walls
+	var needs_outdoor = "outdoor"      in theme and theme.outdoor
+	var needs_garage  = ("low_ceiling" in theme and theme.low_ceiling) or \
+						("has_pillars" in theme and theme.has_pillars)
+
+	# Only rebuild if the environment type is actually different from the default gym
+	if not needs_cage and not needs_outdoor and not needs_garage:
+		return  # keep existing gym environment
+
+	_clear_environment()
+
+	if needs_cage:
+		_build_cage_environment()
+	elif needs_outdoor:
+		_build_outdoor_environment()
+	elif needs_garage:
+		_build_garage_environment()
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  THE CAGE — enclosed street court with chain-link fence walls
+# ─────────────────────────────────────────────────────────────────────────────
+func _build_cage_environment() -> void:
+	_env_root = Node3D.new()
+	_env_root.name = "CageEnvironment"
+	add_child(_env_root)
+
+	var hw: float = court_width  / 2.0 + 0.8   # fence X half-distance  (8.8 m from centre)
+	var hl: float = court_length / 2.0 + 0.8   # fence Z half-distance  (15.8 m from centre)
+	var cage_h: float = 5.5
+
+	# ── Chain-link fence panels (visual) ─────────────────────────────────
+	var fence_mat = StandardMaterial3D.new()
+	fence_mat.albedo_color         = Color(0.40, 0.38, 0.34, 0.82)
+	fence_mat.transparency         = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fence_mat.roughness            = 0.88
+	fence_mat.metallic             = 0.35
+
+	var fence_configs: Array = [
+		[Vector3(0,       cage_h * 0.5, -hl ), Vector3(hw * 2.0, cage_h, 0.15)],  # North
+		[Vector3(0,       cage_h * 0.5,  hl ), Vector3(hw * 2.0, cage_h, 0.15)],  # South
+		[Vector3(-hw,     cage_h * 0.5,  0  ), Vector3(0.15, cage_h, hl  * 2.0)],  # West
+		[Vector3( hw,     cage_h * 0.5,  0  ), Vector3(0.15, cage_h, hl  * 2.0)],  # East
+	]
+
+	for fc in fence_configs:
+		var mi = MeshInstance3D.new()
+		var bm = BoxMesh.new()
+		bm.size  = fc[1]
+		mi.mesh  = bm
+		mi.material_override = fence_mat
+		mi.position = fc[0]
+		_env_root.add_child(mi)
+
+		# Physical wall so ball bounces back
+		var body = StaticBody3D.new()
+		body.position        = fc[0]
+		body.collision_layer = 1
+		var col   = CollisionShape3D.new()
+		var shape = BoxShape3D.new()
+		shape.size  = fc[1]
+		col.shape   = shape
+		body.add_child(col)
+		_env_root.add_child(body)
+
+	# ── Vertical steel posts ──────────────────────────────────────────────
+	var post_mat = StandardMaterial3D.new()
+	post_mat.albedo_color = Color(0.30, 0.28, 0.25)
+	post_mat.metallic     = 0.65
+	post_mat.roughness    = 0.45
+
+	var post_xs: Array = [-hw, -hw * 0.5, 0.0, hw * 0.5,  hw]
+	var post_zs: Array = [-hl, hl]
+	for px in post_xs:
+		for pz in post_zs:
+			var post = MeshInstance3D.new()
+			var pm   = CylinderMesh.new()
+			pm.top_radius    = 0.06
+			pm.bottom_radius = 0.06
+			pm.height        = cage_h
+			post.mesh = pm
+			post.material_override = post_mat
+			post.position = Vector3(px, cage_h * 0.5, pz)
+			_env_root.add_child(post)
+	var side_zs: Array = [-hl * 0.5, 0.0, hl * 0.5]
+	for pz2 in side_zs:
+		for px2 in [-hw, hw]:
+			var post2 = MeshInstance3D.new()
+			var pm2   = CylinderMesh.new()
+			pm2.top_radius    = 0.06
+			pm2.bottom_radius = 0.06
+			pm2.height        = cage_h
+			post2.mesh = pm2
+			post2.material_override = post_mat
+			post2.position = Vector3(px2, cage_h * 0.5, pz2)
+			_env_root.add_child(post2)
+
+	# ── Floodlights on corner posts ───────────────────────────────────────
+	for fl_corner in [Vector3(-hw + 1.0, cage_h - 0.6, -hl + 1.0),
+					   Vector3( hw - 1.0, cage_h - 0.6, -hl + 1.0),
+					   Vector3(-hw + 1.0, cage_h - 0.6,  hl - 1.0),
+					   Vector3( hw - 1.0, cage_h - 0.6,  hl - 1.0)]:
+		var spot = OmniLight3D.new()
+		spot.position      = fl_corner
+		spot.light_energy  = 1.6
+		spot.light_color   = Color(0.95, 0.88, 0.70)
+		spot.omni_range    = 22.0
+		_env_root.add_child(spot)
+
+	# ── Dark asphalt runoff around the court ─────────────────────────────
+	var asphalt_mat = StandardMaterial3D.new()
+	asphalt_mat.albedo_color = Color(0.15, 0.14, 0.12)
+	asphalt_mat.roughness    = 0.96
+	var runoff_strips: Array = [
+		[Vector3(0, -0.09, -(court_length * 0.5 + 0.4)), Vector3(hw * 2.0, 0.16, 0.8)],  # North gap
+		[Vector3(0, -0.09,  (court_length * 0.5 + 0.4)), Vector3(hw * 2.0, 0.16, 0.8)],  # South gap
+		[Vector3(-(court_width * 0.5 + 0.4), -0.09, 0), Vector3(0.8, 0.16, court_length + 1.6)],  # West
+		[Vector3( (court_width * 0.5 + 0.4), -0.09, 0), Vector3(0.8, 0.16, court_length + 1.6)],  # East
+	]
+	for rs in runoff_strips:
+		var ri = MeshInstance3D.new()
+		var rb = BoxMesh.new()
+		rb.size = rs[1]
+		ri.mesh = rb
+		ri.material_override = asphalt_mat
+		ri.position = rs[0]
+		_env_root.add_child(ri)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  ROOFTOP — open air, no enclosure, city backdrop
+# ─────────────────────────────────────────────────────────────────────────────
+func _build_outdoor_environment() -> void:
+	_env_root = Node3D.new()
+	_env_root.name = "OutdoorEnvironment"
+	add_child(_env_root)
+
+	var ext: float = 9.0   # how far the rooftop extends past the court
+	var pw : float = court_width  / 2.0 + ext
+	var pl : float = court_length / 2.0 + ext
+
+	# ── Concrete rooftop surface ──────────────────────────────────────────
+	var roof_mat = StandardMaterial3D.new()
+	roof_mat.albedo_color = Color(0.38, 0.36, 0.33)
+	roof_mat.roughness    = 0.92
+	for tile in [
+		[Vector3(0, -0.09, -(court_length * 0.5 + ext * 0.5)), Vector3(pw * 2.0, 0.16, ext)],  # North
+		[Vector3(0, -0.09,  (court_length * 0.5 + ext * 0.5)), Vector3(pw * 2.0, 0.16, ext)],  # South
+		[Vector3(-(court_width * 0.5 + ext * 0.5), -0.09, 0), Vector3(ext, 0.16, court_length)],  # West
+		[Vector3( (court_width * 0.5 + ext * 0.5), -0.09, 0), Vector3(ext, 0.16, court_length)],  # East
+	]:
+		var mi = MeshInstance3D.new()
+		var bm = BoxMesh.new()
+		bm.size = tile[1]
+		mi.mesh = bm
+		mi.material_override = roof_mat
+		mi.position = tile[0]
+		_env_root.add_child(mi)
+
+	# ── Parapet walls (visual only — ball going over = OOB as normal) ─────
+	var par_mat = StandardMaterial3D.new()
+	par_mat.albedo_color = Color(0.44, 0.42, 0.39)
+	par_mat.roughness    = 0.90
+	var par_h: float = 1.2
+	var par_t: float = 0.45
+	for pc in [
+		[Vector3(0, par_h * 0.5, -pl), Vector3(pw * 2.0, par_h, par_t)],
+		[Vector3(0, par_h * 0.5,  pl), Vector3(pw * 2.0, par_h, par_t)],
+		[Vector3(-pw, par_h * 0.5, 0), Vector3(par_t, par_h, pl * 2.0)],
+		[Vector3( pw, par_h * 0.5, 0), Vector3(par_t, par_h, pl * 2.0)],
+	]:
+		var mi2 = MeshInstance3D.new()
+		var bm2 = BoxMesh.new()
+		bm2.size = pc[1]
+		mi2.mesh = bm2
+		mi2.material_override = par_mat
+		mi2.position = pc[0]
+		_env_root.add_child(mi2)
+
+	# ── City skyline (silhouette buildings in the distance) ───────────────
+	var bldg_mat = StandardMaterial3D.new()
+	bldg_mat.albedo_color = Color(0.12, 0.15, 0.20)
+	bldg_mat.roughness    = 0.95
+	var rng = RandomNumberGenerator.new()
+	rng.seed = 7331
+	for i in range(24):
+		var bh: float = rng.randf_range(18.0, 50.0)
+		var bw: float = rng.randf_range(5.0, 14.0)
+		var bd: float = rng.randf_range(5.0, 12.0)
+		var dist: float = rng.randf_range(55.0, 100.0)
+		var angle: float = (float(i) / 24.0) * TAU + rng.randf_range(-0.15, 0.15)
+		var bldg = MeshInstance3D.new()
+		var bm3  = BoxMesh.new()
+		bm3.size = Vector3(bw, bh, bd)
+		bldg.mesh = bm3
+		bldg.material_override = bldg_mat
+		bldg.position = Vector3(cos(angle) * dist, bh * 0.5 - 1.0, sin(angle) * dist)
+		_env_root.add_child(bldg)
+
+	# ── AC units and rooftop equipment ────────────────────────────────────
+	var equip_mat = StandardMaterial3D.new()
+	equip_mat.albedo_color = Color(0.50, 0.49, 0.47)
+	equip_mat.roughness    = 0.85
+	var equip_pos: Array = [
+		Vector3(-pw + 1.5, 0.4,  pl - 2.0),
+		Vector3( pw - 1.5, 0.4,  pl - 2.0),
+		Vector3(-pw + 1.5, 0.4, -pl + 2.0),
+		Vector3( pw - 1.5, 0.4, -pl + 2.0),
+	]
+	for ep in equip_pos:
+		var em = MeshInstance3D.new()
+		var eb = BoxMesh.new()
+		eb.size = Vector3(2.0, 0.8, 1.2)
+		em.mesh = eb
+		em.material_override = equip_mat
+		em.position = ep
+		_env_root.add_child(em)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  UNDERGROUND GARAGE — low ceiling, concrete pillars, dim fluorescents
+# ─────────────────────────────────────────────────────────────────────────────
+func _build_garage_environment() -> void:
+	_env_root = Node3D.new()
+	_env_root.name = "GarageEnvironment"
+	add_child(_env_root)
+
+	var GHX : float = 16.5
+	var GHZ : float = 21.0
+	var GH  : float = 4.8   # low ceiling height
+	var GWT : float = 0.5
+
+	var concrete_mat = StandardMaterial3D.new()
+	concrete_mat.albedo_color = Color(0.28, 0.27, 0.25)
+	concrete_mat.roughness    = 0.95
+
+	# ── Outer concrete walls (visual + collision) ─────────────────────────
+	var wall_cfgs: Array = [
+		["GarageWall_N", Vector3(0,      GH * 0.5, -GHZ), Vector3(GHX * 2.0, GH, GWT)],
+		["GarageWall_S", Vector3(0,      GH * 0.5,  GHZ), Vector3(GHX * 2.0, GH, GWT)],
+		["GarageWall_E", Vector3( GHX,   GH * 0.5,  0.0), Vector3(GWT, GH, GHZ * 2.0)],
+		["GarageWall_W", Vector3(-GHX,   GH * 0.5,  0.0), Vector3(GWT, GH, GHZ * 2.0)],
+	]
+	for wc in wall_cfgs:
+		var mi = MeshInstance3D.new()
+		mi.name = wc[0]
+		var bm = BoxMesh.new()
+		bm.size = wc[2]
+		mi.mesh = bm
+		mi.material_override = concrete_mat
+		mi.position = wc[1]
+		_env_root.add_child(mi)
+		var body = StaticBody3D.new()
+		body.position        = wc[1]
+		body.collision_layer = 1
+		var col   = CollisionShape3D.new()
+		var shape = BoxShape3D.new()
+		shape.size  = wc[2]
+		col.shape   = shape
+		body.add_child(col)
+		_env_root.add_child(body)
+
+	# ── Low ceiling (visual + collision) ─────────────────────────────────
+	var ceil_mi = MeshInstance3D.new()
+	ceil_mi.name = "GarageCeiling"
+	var cb = BoxMesh.new()
+	cb.size = Vector3(GHX * 2.0, 0.35, GHZ * 2.0)
+	ceil_mi.mesh = cb
+	ceil_mi.material_override = concrete_mat
+	ceil_mi.position = Vector3(0, GH + 0.175, 0)
+	_env_root.add_child(ceil_mi)
+
+	var ceil_body = StaticBody3D.new()
+	ceil_body.position        = Vector3(0, GH, 0)
+	ceil_body.collision_layer = 1
+	var ceil_col   = CollisionShape3D.new()
+	var ceil_shape = BoxShape3D.new()
+	ceil_shape.size = Vector3(GHX * 2.0, 0.35, GHZ * 2.0)
+	ceil_col.shape  = ceil_shape
+	ceil_body.add_child(ceil_col)
+	_env_root.add_child(ceil_body)
+
+	# ── Concrete pillars (visual + collision) ────────────────────────────
+	var pillar_mat = StandardMaterial3D.new()
+	pillar_mat.albedo_color = Color(0.22, 0.21, 0.19)
+	pillar_mat.roughness    = 0.97
+
+	var pillar_sz  = Vector3(0.65, GH, 0.65)
+	var pillar_pos: Array = [
+		Vector3(-6.5, GH * 0.5, -11.5), Vector3(6.5, GH * 0.5, -11.5),
+		Vector3(-6.5, GH * 0.5,   0.0), Vector3(6.5, GH * 0.5,   0.0),
+		Vector3(-6.5, GH * 0.5,  11.5), Vector3(6.5, GH * 0.5,  11.5),
+	]
+	for pp in pillar_pos:
+		var pi = MeshInstance3D.new()
+		var pb = BoxMesh.new()
+		pb.size = pillar_sz
+		pi.mesh = pb
+		pi.material_override = pillar_mat
+		pi.position = pp
+		_env_root.add_child(pi)
+		var pb2 = StaticBody3D.new()
+		pb2.position        = pp
+		pb2.collision_layer = 1
+		var pcol   = CollisionShape3D.new()
+		var pshape = BoxShape3D.new()
+		pshape.size = pillar_sz
+		pcol.shape  = pshape
+		pb2.add_child(pcol)
+		_env_root.add_child(pb2)
+
+	# ── Fluorescent light fixtures on ceiling ─────────────────────────────
+	var fix_mat = StandardMaterial3D.new()
+	fix_mat.albedo_color     = Color(0.85, 0.88, 0.70)
+	fix_mat.emission_enabled = true
+	fix_mat.emission         = Color(0.85, 0.88, 0.70) * 0.6
+
+	var light_rows: Array = [-court_length * 0.28, 0.0, court_length * 0.28]
+	var light_cols: Array = [-court_width * 0.28, court_width * 0.28]
+	var li_idx: int = 0
+	for lz in light_rows:
+		for lx in light_cols:
+			# Fixture box
+			var fix = MeshInstance3D.new()
+			var fb  = BoxMesh.new()
+			fb.size = Vector3(0.25, 0.08, 1.4)
+			fix.mesh = fb
+			fix.material_override = fix_mat
+			fix.position = Vector3(lx, GH - 0.05, lz)
+			_env_root.add_child(fix)
+			# OmniLight
+			var omni = OmniLight3D.new()
+			omni.name          = "GarageLight_%d" % li_idx
+			omni.position      = Vector3(lx, GH - 0.12, lz)
+			omni.light_energy  = 1.1
+			omni.light_color   = Color(0.82, 0.86, 0.62)
+			omni.omni_range    = 9.5
+			_env_root.add_child(omni)
+			li_idx += 1
+
+	# ── Parking-stripe markings on the runoff floor ───────────────────────
+	var stripe_mat = StandardMaterial3D.new()
+	stripe_mat.albedo_color = Color(0.78, 0.72, 0.20, 0.55)
+	stripe_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	var stripe_xs: Array = [-14.0, -11.5, 11.5, 14.0]
+	for sx in stripe_xs:
+		var sm = MeshInstance3D.new()
+		var sb = BoxMesh.new()
+		sb.size = Vector3(0.12, 0.005, GHZ * 1.6)
+		sm.mesh = sb
+		sm.material_override = stripe_mat
+		sm.position = Vector3(sx, 0.005, 0)
+		_env_root.add_child(sm)

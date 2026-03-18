@@ -2,9 +2,9 @@ extends Control
 
 @onready var bg: ColorRect = $ColorRect
 
-var ticker_scroll_node: ScrollContainer = null
-var ticker_content: Control = null
-var ticker_pos: float = 0.0
+var _music_player: AudioStreamPlayer = null
+var _ticker_copies: Array = []
+var _ticker_copy_width: float = 0.0
 
 var carousel_index: int = 0
 var carousel_slides: Array[Callable] = []
@@ -18,23 +18,39 @@ var standings_view_index: int = -1 # -1 = Player's Division, 0=Gold, 1=Silver, 2
 var bracket_view_index: int = -1 # -1 = Player's Division, 0=Gold, 1=Silver, 2=Bronze
 
 func _process(delta: float) -> void:
-	if ticker_scroll_node and ticker_content:
-		ticker_pos += 80.0 * delta
-		var max_w = ticker_content.size.x / 3.0
-		if max_w > 0:
-			if ticker_pos > max_w:
-				ticker_pos -= max_w
-			ticker_scroll_node.scroll_horizontal = int(ticker_pos)
+	if _ticker_copies.size() == 2 and _ticker_copy_width > 0:
+		for c in _ticker_copies:
+			c.position.x -= 80.0 * delta
+			if c.position.x + _ticker_copy_width <= 0.0:
+				var other = _ticker_copies[1] if c == _ticker_copies[0] else _ticker_copies[0]
+				c.position.x = other.position.x + _ticker_copy_width
 
 func _ready() -> void:
 	_build_ui()
+	
+	# Play Season Hub Music (only once; _build_ui reuse keeps this node alive)
+	if not _music_player:
+		_music_player = AudioStreamPlayer.new()
+		var stream = load("res://assets/sounds/Chrome_Circuits.mp3")
+		if stream is AudioStreamMP3:
+			stream.loop = true
+		_music_player.stream = stream
+		_music_player.bus = "Music"
+		add_child(_music_player)
+		_music_player.play()
+
+	SceneManager.notify_scene_ready()
 
 func _build_ui() -> void:
+	# Reset ticker so _process stops animating freed nodes
+	_ticker_copies = []
+	_ticker_copy_width = 0.0
+
 	# Clear previous dynamically added UI elements to prevent stacking
 	for c in get_children():
-		if c != bg:
+		if c != bg and c != _music_player:
 			c.queue_free()
-		
+
 	var team = LeagueManager.player_team
 	if not team:
 		# Fallback if accessed without a team
@@ -73,7 +89,7 @@ func _build_ui() -> void:
 	main_hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	main_hbox.add_theme_constant_override("separation", 40)
 	main_hbox.set_begin(Vector2(50, 40))
-	main_hbox.set_end(Vector2(-50, -250))
+	main_hbox.set_end(Vector2(-50, -60))
 	add_child(main_hbox)
 	
 	# --- LEFT PANEL (Stats & Roster) ---
@@ -121,7 +137,13 @@ func _build_ui() -> void:
 		accent = Color(1.0, 0.85, 0.2)
 	rec_lbl.add_theme_color_override("font_color", accent)
 	left_vbox.add_child(rec_lbl)
-	
+
+	var funds_lbl = Label.new()
+	funds_lbl.text = "FUNDS:  $%s" % _fmt_funds(team.funds)
+	funds_lbl.add_theme_font_size_override("font_size", 22)
+	funds_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	left_vbox.add_child(funds_lbl)
+
 	left_vbox.add_child(HSeparator.new())
 	
 	var split = HBoxContainer.new()
@@ -178,7 +200,8 @@ func _build_ui() -> void:
 	var slide_configs = []
 	if LeagueManager.is_postseason:
 		slide_configs = [
-			{"name": "BRACKET", "func": _build_carousel_bracket}
+			{"name": "BRACKET", "func": _build_carousel_bracket},
+			{"name": "STANDINGS", "func": _build_carousel_standings}
 		]
 	else:
 		slide_configs = [
@@ -218,30 +241,201 @@ func _build_ui() -> void:
 	# --- RIGHT PANEL (Logo & Actions) ---
 	var right_vbox = VBoxContainer.new()
 	right_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	right_vbox.add_theme_constant_override("separation", 30)
+	right_vbox.alignment = BoxContainer.ALIGNMENT_BEGIN
+	right_vbox.add_theme_constant_override("separation", 25)
 	main_hbox.add_child(right_vbox)
 	
-	# BIG Logo
-	var logo_rect = TextureRect.new()
-	logo_rect.texture = team.logo
-	logo_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	logo_rect.custom_minimum_size = Vector2(180, 180)
-	logo_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	logo_rect.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	right_vbox.add_child(logo_rect)
-	
-	# Play Next Match Button
-	var btn_play = Button.new()
+	# 1. NEXT MATCH CARD (Opponent Info & Branding)
+	var opp = LeagueManager.get_next_opponent()
 	var champ_name = LeagueManager.get_champion_name()
+	var next_match_available = (opp != null)
 	
-	if LeagueManager.is_postseason and champ_name != "":
-		btn_play.text = "VIEW SEASON WRAP-UP"
-		btn_play.pressed.connect(func():
-			_show_season_wrapup(champ_name)
-		)
+	if next_match_available:
+		var card_pnl = PanelContainer.new()
+		var csb = StyleBoxFlat.new()
+		csb.bg_color = Color(0.12, 0.12, 0.18, 0.9)
+		csb.border_color = opp.color_primary.lightened(0.2)
+		csb.set_border_width_all(2)
+		csb.set_corner_radius_all(10)
+		csb.content_margin_left = 20; csb.content_margin_right = 20
+		csb.content_margin_top = 30; csb.content_margin_bottom = 30
+		card_pnl.add_theme_stylebox_override("panel", csb)
+		card_pnl.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		right_vbox.add_child(card_pnl)
 		
-		# Immediately add "START NEXT SEASON" if we have a champion
+		var cvbox = VBoxContainer.new()
+		cvbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		cvbox.add_theme_constant_override("separation", 20)
+		card_pnl.add_child(cvbox)
+		
+		var card_title = Label.new()
+		card_title.text = "NEXT MATCH"
+		card_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card_title.add_theme_font_size_override("font_size", 14)
+		card_title.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+		cvbox.add_child(card_title)
+		
+		var logo_rect = TextureRect.new()
+		logo_rect.texture = opp.logo
+		logo_rect.custom_minimum_size = Vector2(280, 280)
+		logo_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		logo_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		logo_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		cvbox.add_child(logo_rect)
+		
+		var opp_name_lbl = Label.new()
+		opp_name_lbl.text = opp.name.to_upper()
+		opp_name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		opp_name_lbl.add_theme_font_size_override("font_size", 24)
+		opp_name_lbl.add_theme_color_override("font_color", opp.color_primary.lightened(0.4))
+		cvbox.add_child(opp_name_lbl)
+		
+		var rec_str = "%d - %d" % [opp.wins, opp.losses]
+		var opp_rec_lbl = Label.new()
+		opp_rec_lbl.text = rec_str
+		opp_rec_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		opp_rec_lbl.add_theme_font_size_override("font_size", 18)
+		opp_rec_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
+		cvbox.add_child(opp_rec_lbl)
+		
+	elif LeagueManager.is_postseason and champ_name != "":
+		# Championship state - show celebratory info
+		var champ_team = LeagueManager._get_team_by_name(champ_name)
+		if champ_team:
+			var card_pnl = PanelContainer.new()
+			var csb = StyleBoxFlat.new()
+			csb.bg_color = Color(0.12, 0.12, 0.18, 0.9)
+			csb.border_color = Color(1.0, 0.85, 0.1) # Gold border for champions
+			csb.set_border_width_all(3)
+			csb.set_corner_radius_all(10)
+			csb.content_margin_left = 20; csb.content_margin_right = 20
+			csb.content_margin_top = 30; csb.content_margin_bottom = 30
+			card_pnl.add_theme_stylebox_override("panel", csb)
+			card_pnl.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			right_vbox.add_child(card_pnl)
+			
+			var cvbox = VBoxContainer.new()
+			cvbox.alignment = BoxContainer.ALIGNMENT_CENTER
+			cvbox.add_theme_constant_override("separation", 20)
+			card_pnl.add_child(cvbox)
+			
+			var card_title = Label.new()
+			card_title.text = "SEASON CHAMPIONS"
+			card_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			card_title.add_theme_font_size_override("font_size", 16)
+			card_title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.1))
+			cvbox.add_child(card_title)
+			
+			var logo_rect = TextureRect.new()
+			logo_rect.texture = champ_team.logo
+			logo_rect.custom_minimum_size = Vector2(240, 240)
+			logo_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			logo_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			logo_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			cvbox.add_child(logo_rect)
+			
+			var champ_name_lbl = Label.new()
+			champ_name_lbl.text = champ_team.name.to_upper()
+			champ_name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			champ_name_lbl.add_theme_font_size_override("font_size", 28)
+			champ_name_lbl.add_theme_color_override("font_color", Color.WHITE)
+			cvbox.add_child(champ_name_lbl)
+	else:
+		# Fallback Logo if no match and not offseason
+		var logo_rect = TextureRect.new()
+		logo_rect.texture = team.logo
+		logo_rect.custom_minimum_size = Vector2(280, 280)
+		logo_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		logo_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		logo_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		logo_rect.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		right_vbox.add_child(logo_rect)
+
+	# 2. ACTION ROW (Preview | Play | Simulate)
+	var action_row = HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 10)
+	action_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	right_vbox.add_child(action_row)
+	
+	pnl_actions_group = []
+	
+	var style_main_btn = func(btn: Button, base_col: Color, is_primary: bool):
+		var bsb = StyleBoxFlat.new()
+		bsb.bg_color = base_col.darkened(0.2) if is_primary else Color(0.15, 0.15, 0.2, 0.8)
+		bsb.border_color = base_col.lightened(0.2)
+		bsb.set_border_width_all(2)
+		bsb.set_corner_radius_all(6)
+		bsb.content_margin_top = 12; bsb.content_margin_bottom = 12
+		bsb.content_margin_left = 15; bsb.content_margin_right = 15
+		btn.add_theme_stylebox_override("normal", bsb)
+		
+		var bsb_h = bsb.duplicate()
+		bsb_h.bg_color = base_col if is_primary else Color(0.2, 0.2, 0.3, 0.9)
+		btn.add_theme_stylebox_override("hover", bsb_h)
+		
+		var bsb_p = bsb.duplicate()
+		bsb_p.bg_color = base_col.darkened(0.4) if is_primary else Color(0.1, 0.1, 0.15, 0.9)
+		btn.add_theme_stylebox_override("pressed", bsb_p)
+		
+		btn.add_theme_font_size_override("font_size", 18)
+		btn.add_theme_color_override("font_color", Color.WHITE)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	# PREVIEW Button
+	var btn_preview = Button.new()
+	btn_preview.text = "PREVIEW"
+	style_main_btn.call(btn_preview, Color(0.4, 0.4, 0.5), false)
+	if next_match_available and not LeagueManager.is_postseason:
+		var m_data = null
+		var w_idx = LeagueManager.current_week
+		if w_idx < LeagueManager.schedule.size():
+			for m in LeagueManager.schedule[w_idx]:
+				if m["home"] == team.name or m["away"] == team.name:
+					m_data = m
+					break
+		if m_data:
+			btn_preview.pressed.connect(func(): _show_matchup_preview(m_data, w_idx))
+		else:
+			btn_preview.disabled = true
+	else:
+		btn_preview.visible = false
+	action_row.add_child(btn_preview)
+	
+	# PLAY Button
+	var btn_play = Button.new()
+	if next_match_available:
+		btn_play.text = "PLAY"
+		btn_play.pressed.connect(_on_play_next_pressed)
+		style_main_btn.call(btn_play, team.color_primary, true)
+	elif LeagueManager.is_postseason and champ_name != "":
+		btn_play.text = "SEASON WRAP-UP"
+		btn_play.pressed.connect(func(): _show_season_wrapup(champ_name))
+		style_main_btn.call(btn_play, Color(0.2, 0.6, 0.8), true)
+	else:
+		btn_play.text = "PLAY"
+		btn_play.disabled = true
+		style_main_btn.call(btn_play, team.color_primary, true)
+	action_row.add_child(btn_play)
+	
+	# SIMULATE Button
+	var btn_sim = Button.new()
+	btn_sim.text = "SIMULATE"
+	style_main_btn.call(btn_sim, Color(0.15, 0.15, 0.25), false)
+	btn_sim.pressed.connect(_on_simulate_pressed)
+	if LeagueManager.is_postseason:
+		if champ_name != "":
+			btn_sim.visible = false
+		elif LeagueManager.get_next_opponent() == null:
+			btn_sim.text = "SIM ROUND"
+	if not next_match_available and btn_sim.text != "SIM ROUND":
+		btn_sim.disabled = true
+	action_row.add_child(btn_sim)
+
+	pnl_actions_group.append(btn_play)
+	pnl_actions_group.append(btn_sim)
+	
+	# Start Next Season (if applicable)
+	if LeagueManager.is_postseason and champ_name != "":
 		var btn_next = Button.new()
 		btn_next.text = "START NEXT SEASON"
 		var nsb = StyleBoxFlat.new()
@@ -249,127 +443,66 @@ func _build_ui() -> void:
 		nsb.border_color = Color(0.4, 0.9, 0.5)
 		nsb.set_border_width_all(3)
 		nsb.set_corner_radius_all(8)
-		nsb.content_margin_top = 20
-		nsb.content_margin_bottom = 20
+		nsb.content_margin_top = 15
+		nsb.content_margin_bottom = 15
 		btn_next.add_theme_stylebox_override("normal", nsb)
 		
 		var nh_sb = nsb.duplicate()
 		nh_sb.bg_color = Color(0.3, 0.8, 0.4)
 		btn_next.add_theme_stylebox_override("hover", nh_sb)
 		
-		var np_sb = nsb.duplicate()
-		np_sb.bg_color = Color(0.1, 0.5, 0.2)
-		btn_next.add_theme_stylebox_override("pressed", np_sb)
-		
-		btn_next.add_theme_font_size_override("font_size", 24)
+		btn_next.add_theme_font_size_override("font_size", 22)
 		btn_next.add_theme_color_override("font_color", Color.WHITE)
 		btn_next.pressed.connect(func():
 			LeagueManager.process_season_rollover(champ_name)
 			get_tree().change_scene_to_file("res://ui/season_hub.tscn")
 		)
 		right_vbox.add_child(btn_next)
-		
-	else:
-		var opp = LeagueManager.get_next_opponent()
-		if opp:
-			btn_play.text = "PLAY NEXT MATCH (vs %s)" % opp.name
-			btn_play.pressed.connect(_on_play_next_pressed)
-		else:
-			btn_play.text = "ELIMINATED"
-			btn_play.disabled = true
-			if LeagueManager.is_postseason and champ_name != "":
-				btn_play.disabled = false
-				btn_play.text = "VIEW SEASON WRAP-UP"
-				btn_play.pressed.connect(func():
-					_show_season_wrapup(champ_name)
-				)
-	
-	var sb = StyleBoxFlat.new()
-	sb.bg_color = Color(col.r * 0.6, col.g * 0.6, col.b * 0.6, 0.9)
-	sb.border_color = col.lightened(0.3)
-	sb.set_border_width_all(3)
-	sb.set_corner_radius_all(8)
-	sb.content_margin_top = 20
-	sb.content_margin_bottom = 20
-	btn_play.add_theme_stylebox_override("normal", sb)
-	btn_play.add_theme_stylebox_override("disabled", sb)
-	
-	var sb_h = sb.duplicate()
-	sb_h.bg_color = col
-	btn_play.add_theme_stylebox_override("hover", sb_h)
-	
-	var sb_p = sb.duplicate()
-	sb_p.bg_color = col.darkened(0.3)
-	btn_play.add_theme_stylebox_override("pressed", sb_p)
-	
-	btn_play.add_theme_font_size_override("font_size", 28)
-	btn_play.add_theme_color_override("font_color", Color.WHITE)
-	right_vbox.add_child(btn_play)
-	
-	# Simulate Match Button
-	var btn_sim = Button.new()
-	btn_sim.text = "SIMULATE MATCH"
-	
-	var sim_sb = StyleBoxFlat.new()
-	sim_sb.bg_color = Color(0.15, 0.15, 0.25, 0.9)
-	sim_sb.border_color = Color(0.4, 0.4, 0.6)
-	sim_sb.set_border_width_all(2)
-	sim_sb.set_corner_radius_all(8)
-	sim_sb.content_margin_top = 15
-	sim_sb.content_margin_bottom = 15
-	btn_sim.add_theme_stylebox_override("normal", sim_sb)
-	
-	var sim_sb_h = sim_sb.duplicate()
-	sim_sb_h.bg_color = Color(0.2, 0.2, 0.35, 1.0)
-	btn_sim.add_theme_stylebox_override("hover", sim_sb_h)
-	
-	var sim_sb_p = sim_sb.duplicate()
-	sim_sb_p.bg_color = Color(0.1, 0.1, 0.15, 0.9)
-	btn_sim.add_theme_stylebox_override("pressed", sim_sb_p)
-	
-	btn_sim.add_theme_font_size_override("font_size", 24)
-	btn_sim.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
-	btn_sim.pressed.connect(_on_simulate_pressed)
-	if LeagueManager.is_postseason:
-		if champ_name != "":
-			btn_sim.visible = false
-		elif LeagueManager.get_next_opponent() == null:
-			btn_sim.disabled = false
-			btn_sim.text = "SIMULATE ROUND"
-	right_vbox.add_child(btn_sim)
-	
-	# Season Stats Button
+
+	# 3. SECONDARY BUTTONS
 	var btn_stats = Button.new()
 	btn_stats.text = "SEASON STATS"
 	_style_side_button(btn_stats)
 	btn_stats.pressed.connect(_on_season_stats_pressed)
 	right_vbox.add_child(btn_stats)
-	
-	pnl_actions_group = [] # Keep track of buttons to disable during loading/sims
-	pnl_actions_group.append(btn_play)
-	pnl_actions_group.append(btn_sim)
-	# Quit Button
+
+	var btn_fa = Button.new()
+	btn_fa.text = "FREE AGENTS"
+	_style_side_button(btn_fa)
+	btn_fa.pressed.connect(_on_free_agents_pressed)
+	right_vbox.add_child(btn_fa)
+	pnl_actions_group.append(btn_fa)
+
 	var btn_main = Button.new()
 	btn_main.text = "QUIT TO MAIN MENU"
 	_style_side_button(btn_main)
 	btn_main.pressed.connect(_on_main_menu_pressed)
 	right_vbox.add_child(btn_main)
 	
+	
 	# --- TICKER ---
+	_build_ticker()
+
+	btn_play.grab_focus()
+
+func _build_ticker() -> void:
 	var ticker_bg = ColorRect.new()
 	ticker_bg.color = Color(0, 0, 0, 0.6)
 	ticker_bg.custom_minimum_size = Vector2(0, 40)
-	ticker_bg.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	ticker_bg.set_anchor(SIDE_LEFT, 0.0)
 	ticker_bg.set_anchor(SIDE_TOP, 1.0)
+	ticker_bg.set_anchor(SIDE_RIGHT, 1.0)
 	ticker_bg.set_anchor(SIDE_BOTTOM, 1.0)
+	ticker_bg.set_offset(SIDE_LEFT, 0)
 	ticker_bg.set_offset(SIDE_TOP, -40)
+	ticker_bg.set_offset(SIDE_RIGHT, 0)
 	ticker_bg.set_offset(SIDE_BOTTOM, 0)
 	add_child(ticker_bg)
-	
+
 	var ticker_hbox = HBoxContainer.new()
 	ticker_hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	ticker_bg.add_child(ticker_hbox)
-	
+
 	var header_pnl = PanelContainer.new()
 	var h_sb = StyleBoxFlat.new()
 	h_sb.bg_color = Color(0.1, 0.1, 0.15, 0.9)
@@ -378,161 +511,167 @@ func _build_ui() -> void:
 	h_sb.content_margin_left = 20; h_sb.content_margin_right = 20
 	header_pnl.add_theme_stylebox_override("panel", h_sb)
 	ticker_hbox.add_child(header_pnl)
-	
+
 	var header_lbl = Label.new()
 	header_lbl.text = "AROUND THE LEAGUE"
 	header_lbl.add_theme_font_size_override("font_size", 20)
 	header_lbl.add_theme_color_override("font_color", Color(0.0, 0.9, 1.0))
 	header_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	header_pnl.add_child(header_lbl)
-	
-	var ts = ScrollContainer.new()
-	ts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ts.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	ts.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-	ts.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ticker_hbox.add_child(ts)
-	
-	var thb = HBoxContainer.new()
-	thb.add_theme_constant_override("separation", 50)
-	ts.add_child(thb)
-	
+
+	var ticker_clip = Control.new()
+	ticker_clip.clip_contents = true
+	ticker_clip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ticker_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ticker_hbox.add_child(ticker_clip)
+
+	# Build match data list
 	var active_sched = LeagueManager.playoff_schedule if LeagueManager.is_postseason else LeagueManager.schedule
 	var match_nodes = []
-	
 	if LeagueManager.current_week > 0:
 		var prev_matches = active_sched[LeagueManager.current_week - 1]
 		var curr_matches = active_sched[LeagueManager.current_week] if LeagueManager.current_week < active_sched.size() else []
-		
 		for m in prev_matches:
-			if m.get("played", false):
-				match_nodes.append(m)
-				
+			if m.get("played", false): match_nodes.append(m)
 		for m in curr_matches:
-			if not m.get("played", false):
-				match_nodes.append(m)
+			if not m.get("played", false): match_nodes.append(m)
 	else:
 		if active_sched.size() > 0:
 			for m in active_sched[0]:
-				if not m.get("played", false):
-					match_nodes.append(m)
-				
-	if match_nodes.is_empty():
-		var l = Label.new()
-		l.text = "+++ PRE-SEASON WARMUPS UNDERWAY +++"
-		l.add_theme_font_size_override("font_size", 20)
-		l.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		thb.add_child(l)
-		ticker_content = l
-	else:
-		# Division badge colors: Bronze=amber, Silver=silver-blue, Gold=gold
-		var div_badge_colors = {
-			"Bronze": Color(0.8, 0.5, 0.1),
-			"Silver": Color(0.7, 0.8, 1.0),
-			"Gold":   Color(1.0, 0.85, 0.1)
-		}
-		for copy in range(3):
-			for m in match_nodes:
-				var m_hb = HBoxContainer.new()
-				m_hb.add_theme_constant_override("separation", 8)
-				
-				# --- Division badge ---
-				var div_name = m.get("div", m.get("division", ""))
-				if div_name != "":
-					var badge = Label.new()
-					badge.text = "[%s]" % div_name.to_upper()
-					badge.add_theme_font_size_override("font_size", 14)
-					var badge_col = div_badge_colors.get(div_name, Color(0.6, 0.6, 0.7))
-					badge.add_theme_color_override("font_color", badge_col)
-					badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-					m_hb.add_child(badge)
-				
-				if m.get("played", false):
-					var a_lbl = Label.new()
-					a_lbl.text = "%s %d" % [m["away"], m["away_score"]]
-					a_lbl.add_theme_font_size_override("font_size", 20)
-					if m["away_score"] > m["home_score"]:
-						a_lbl.add_theme_color_override("font_color", Color.YELLOW)
-					else:
-						a_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
-					m_hb.add_child(a_lbl)
-					
-					var dash = Label.new()
-					dash.text = "-"
-					dash.add_theme_font_size_override("font_size", 20)
-					dash.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-					m_hb.add_child(dash)
-					
-					var h_lbl = Label.new()
-					h_lbl.text = "%d %s" % [m["home_score"], m["home"]]
-					h_lbl.add_theme_font_size_override("font_size", 20)
-					if m["home_score"] > m["away_score"]:
-						h_lbl.add_theme_color_override("font_color", Color.YELLOW)
-					else:
-						h_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
-					m_hb.add_child(h_lbl)
-					
-					var potg_text = ""
-					if m.has("top_scorer") and m["top_scorer"] != "Player":
-						var pts = m.get("top_scorer_pts", 0)
-						var reb = m.get("top_rebounder_reb", 0)
-						var ast = m.get("top_assister_ast", 0)
-						
-						potg_text = "  |  POTG: %s (%d PTS)" % [m["top_scorer"], pts]
-						if m.has("top_rebounder") and m["top_rebounder"] != "Player" and reb > 0:
-							potg_text += ", %s (%d REB)" % [m["top_rebounder"], reb]
-						if m.has("top_assister") and m["top_assister"] != "Player" and ast > 0:
-							potg_text += ", %s (%d AST)" % [m["top_assister"], ast]
-					
-					if potg_text != "":
-						var p_lbl = Label.new()
-						p_lbl.text = potg_text
-						p_lbl.add_theme_font_size_override("font_size", 16)
-						p_lbl.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
-						p_lbl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-						m_hb.add_child(p_lbl)
-				else:
-					var a_lbl = Label.new()
-					var t_away = LeagueManager._get_team_by_name(m["away"])
-					var t_home = LeagueManager._get_team_by_name(m["home"])
-					
-					var a_name = m["away"]
-					if t_away: a_name += " (%d-%d)" % [t_away.wins, t_away.losses]
-					a_lbl.text = a_name
-					a_lbl.add_theme_font_size_override("font_size", 20)
-					a_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
-					m_hb.add_child(a_lbl)
-					
-					var dash = Label.new()
-					dash.text = " @ "
-					dash.add_theme_font_size_override("font_size", 20)
-					dash.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-					m_hb.add_child(dash)
-					
-					var h_lbl = Label.new()
-					var h_name = m["home"]
-					if t_home: h_name += " (%d-%d)" % [t_home.wins, t_home.losses]
-					h_lbl.text = h_name
-					h_lbl.add_theme_font_size_override("font_size", 20)
-					h_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
-					m_hb.add_child(h_lbl)
-					
-				thb.add_child(m_hb)
-				
-				if copy < 2 or m != match_nodes.back():
-					var dot = Label.new()
-					dot.text = "•"
-					dot.add_theme_font_size_override("font_size", 20)
-					dot.add_theme_color_override("font_color", Color(0.4, 0.4, 0.5))
-					thb.add_child(dot)
-					
-		ticker_content = thb
-	
-	ticker_scroll_node = ts
-	ticker_pos = 0.0
-	
-	btn_play.grab_focus()
+				if not m.get("played", false): match_nodes.append(m)
+
+	var div_badge_colors = {
+		"Bronze": Color(0.8, 0.5, 0.1),
+		"Silver": Color(0.7, 0.8, 1.0),
+		"Gold":   Color(1.0, 0.85, 0.1)
+	}
+
+	var _fill_copy = func(target: HBoxContainer):
+		if match_nodes.is_empty():
+			var l = Label.new()
+			l.text = "+++ PRE-SEASON WARMUPS UNDERWAY +++"
+			l.add_theme_font_size_override("font_size", 20)
+			l.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
+			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			l.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			target.add_child(l)
+			var gap = Label.new()
+			gap.text = "   |   "
+			gap.add_theme_font_size_override("font_size", 20)
+			gap.add_theme_color_override("font_color", Color(0.4, 0.4, 0.5))
+			target.add_child(gap)
+			return
+		for m in match_nodes:
+			var m_hb = HBoxContainer.new()
+			m_hb.add_theme_constant_override("separation", 8)
+			m_hb.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			var div_name = m.get("div", m.get("division", ""))
+			if div_name != "":
+				var badge = Label.new()
+				badge.text = "[%s]" % div_name.to_upper()
+				badge.add_theme_font_size_override("font_size", 14)
+				badge.add_theme_color_override("font_color", div_badge_colors.get(div_name, Color(0.6, 0.6, 0.7)))
+				badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+				m_hb.add_child(badge)
+			if m.get("played", false):
+				var a_lbl = Label.new()
+				a_lbl.text = "%s %d" % [m["away"], m["away_score"]]
+				a_lbl.add_theme_font_size_override("font_size", 20)
+				a_lbl.add_theme_color_override("font_color", Color.YELLOW if m["away_score"] > m["home_score"] else Color(0.8, 0.8, 0.9))
+				a_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+				m_hb.add_child(a_lbl)
+				var dash = Label.new()
+				dash.text = " - "
+				dash.add_theme_font_size_override("font_size", 20)
+				dash.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+				dash.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+				m_hb.add_child(dash)
+				var h_lbl = Label.new()
+				h_lbl.text = "%d %s" % [m["home_score"], m["home"]]
+				h_lbl.add_theme_font_size_override("font_size", 20)
+				h_lbl.add_theme_color_override("font_color", Color.YELLOW if m["home_score"] > m["away_score"] else Color(0.8, 0.8, 0.9))
+				h_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+				m_hb.add_child(h_lbl)
+				var potg_text = ""
+				if m.has("top_scorer") and m["top_scorer"] != "Player":
+					var pts = m.get("top_scorer_pts", 0)
+					var reb = m.get("top_rebounder_reb", 0)
+					var ast = m.get("top_assister_ast", 0)
+					potg_text = "  |  POTG: %s (%d PTS)" % [m["top_scorer"], pts]
+					if m.has("top_rebounder") and m["top_rebounder"] != "Player" and reb > 0:
+						potg_text += ", %s (%d REB)" % [m["top_rebounder"], reb]
+					if m.has("top_assister") and m["top_assister"] != "Player" and ast > 0:
+						potg_text += ", %s (%d AST)" % [m["top_assister"], ast]
+				if potg_text != "":
+					var p_lbl = Label.new()
+					p_lbl.text = potg_text
+					p_lbl.add_theme_font_size_override("font_size", 16)
+					p_lbl.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
+					p_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+					m_hb.add_child(p_lbl)
+			else:
+				var t_away = LeagueManager._get_team_by_name(m["away"])
+				var t_home = LeagueManager._get_team_by_name(m["home"])
+				var a_lbl = Label.new()
+				var a_name = m["away"]
+				if t_away: a_name += " (%d-%d)" % [t_away.wins, t_away.losses]
+				a_lbl.text = a_name
+				a_lbl.add_theme_font_size_override("font_size", 20)
+				a_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
+				a_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+				m_hb.add_child(a_lbl)
+				var dash = Label.new()
+				dash.text = " @ "
+				dash.add_theme_font_size_override("font_size", 20)
+				dash.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+				dash.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+				m_hb.add_child(dash)
+				var h_lbl = Label.new()
+				var h_name = m["home"]
+				if t_home: h_name += " (%d-%d)" % [t_home.wins, t_home.losses]
+				h_lbl.text = h_name
+				h_lbl.add_theme_font_size_override("font_size", 20)
+				h_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
+				h_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+				m_hb.add_child(h_lbl)
+			target.add_child(m_hb)
+			var dot = Label.new()
+			dot.text = "   |   "
+			dot.add_theme_font_size_override("font_size", 20)
+			dot.add_theme_color_override("font_color", Color(0.4, 0.4, 0.5))
+			dot.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			target.add_child(dot)
+
+	var copy_a = HBoxContainer.new()
+	copy_a.custom_minimum_size.y = 40
+	copy_a.add_theme_constant_override("separation", 50)
+	ticker_clip.add_child(copy_a)
+
+	var copy_b = HBoxContainer.new()
+	copy_b.custom_minimum_size.y = 40
+	copy_b.add_theme_constant_override("separation", 50)
+	ticker_clip.add_child(copy_b)
+
+	_fill_copy.call(copy_a)
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	if not is_instance_valid(copy_a) or not is_instance_valid(copy_b):
+		return
+
+	var raw_w = copy_a.get_minimum_size().x
+	var screen_w = get_viewport_rect().size.x
+	var reps = max(1, int(ceil(screen_w / raw_w)))
+
+	for _r in range(reps - 1):
+		_fill_copy.call(copy_a)
+	for _r in range(reps):
+		_fill_copy.call(copy_b)
+
+	_ticker_copy_width = copy_a.get_minimum_size().x
+	copy_b.position.x = _ticker_copy_width
+	_ticker_copies = [copy_a, copy_b]
 
 func _on_carousel_tab_pressed(idx: int) -> void:
 	if carousel_index == idx: return
@@ -908,7 +1047,7 @@ func _show_season_stats_table(container: VBoxContainer) -> void:
 			btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 			if f == stats_sort_field:
 				btn.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
-				btn.text += " " + ("↑" if stats_sort_asc else "↓")
+				btn.text += " " + ("^" if stats_sort_asc else "v")
 			else:
 				btn.add_theme_color_override("font_color", Color(0.6, 0.7, 0.8))
 			
@@ -1682,11 +1821,13 @@ func _show_season_wrapup(champ_name: String) -> void:
 		
 		# Playoff Outcome
 		var playoff_outcome = "DID NOT QUALIFY"
+		var prize_money = 0
 		if LeagueManager.is_postseason:
 			var p_div = LeagueManager.get_player_division_name()
 			var is_champ = champs_map.get(p_div) == pt.name
 			if is_champ:
 				playoff_outcome = "DIVISION CHAMPION"
+				prize_money = 5000
 			else:
 				var in_finals = false
 				var in_semis = false
@@ -1722,6 +1863,14 @@ func _show_season_wrapup(champ_name: String) -> void:
 			out_val.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		out_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		out_vb.add_child(out_val)
+		
+		if prize_money > 0:
+			var prize_lbl = Label.new()
+			prize_lbl.text = "CHAMPIONSHIP PRIZE: +$5,000"
+			prize_lbl.add_theme_font_size_override("font_size", 16)
+			prize_lbl.add_theme_color_override("font_color", Color(0.0, 1.0, 0.5))
+			prize_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			out_vb.add_child(prize_lbl)
 		
 		# Team MVP
 		var mvp = null
@@ -2686,76 +2835,115 @@ func _build_generic_modal(title_text: String, w: int, h: int) -> Control:
 	return vbox
 
 func _show_matchup_preview(match_data: Dictionary, week: int) -> void:
-	var vbox = _build_generic_modal("WEEK %d PREVIEW" % (week + 1), 700, 500)
-	
+	var vbox = _build_generic_modal("WEEK %d PREVIEW" % (week + 1), 960, 560)
+
 	var hb = HBoxContainer.new()
 	hb.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	hb.add_theme_constant_override("separation", 20)
+	hb.add_theme_constant_override("separation", 16)
 	vbox.add_child(hb)
-	
+
 	var t_home = LeagueManager._get_team_by_name(match_data["home"])
 	var t_away = LeagueManager._get_team_by_name(match_data["away"])
-	
-	var left = _build_team_preview_col(t_home, "HOME", match_data["played"] and match_data["home_score"] > match_data["away_score"])
+	var home_avgs = _get_team_avgs(t_home)
+	var away_avgs = _get_team_avgs(t_away)
+	var home_ovr  = _preview_team_ovr(t_home)
+	var away_ovr  = _preview_team_ovr(t_away)
+
+	var left = _build_team_preview_col(t_home, "HOME",
+		match_data["played"] and match_data["home_score"] > match_data["away_score"],
+		home_ovr)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hb.add_child(left)
-	
+
+	# --- Center: VS + score (if played) + OVR + stat comparison ---
 	var mid = VBoxContainer.new()
 	mid.alignment = BoxContainer.ALIGNMENT_CENTER
-	mid.custom_minimum_size = Vector2(80, 0)
+	mid.add_theme_constant_override("separation", 6)
+	mid.custom_minimum_size = Vector2(240, 0)
 	hb.add_child(mid)
-	
+
 	var vs_lbl = Label.new()
 	vs_lbl.text = "VS"
 	vs_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vs_lbl.add_theme_font_size_override("font_size", 36)
+	vs_lbl.add_theme_font_size_override("font_size", 28)
 	vs_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
 	mid.add_child(vs_lbl)
-	
+
 	if match_data["played"]:
 		var score_lbl = Label.new()
-		score_lbl.text = "%d - %d" % [match_data["home_score"], match_data["away_score"]]
+		score_lbl.text = "%d  –  %d" % [match_data["home_score"], match_data["away_score"]]
 		score_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		score_lbl.add_theme_font_size_override("font_size", 28)
+		score_lbl.add_theme_font_size_override("font_size", 22)
 		mid.add_child(score_lbl)
-	
-	var right = _build_team_preview_col(t_away, "AWAY", match_data["played"] and match_data["away_score"] > match_data["home_score"])
+
+	var sep0 = HSeparator.new()
+	mid.add_child(sep0)
+
+	# OVR row
+	_add_stat_compare_row(mid, home_ovr, "OVR", away_ovr, true)
+
+	var sep1 = HSeparator.new()
+	mid.add_child(sep1)
+
+	# Per-stat rows
+	var stat_keys   = ["speed", "shot", "pass_skill", "tackle", "strength", "aggression"]
+	var stat_labels = ["SPD",   "SHT",  "PAS",        "TCK",    "STR",      "AGG"]
+	for i in range(stat_keys.size()):
+		_add_stat_compare_row(mid,
+			int(home_avgs.get(stat_keys[i], 0.0)),
+			stat_labels[i],
+			int(away_avgs.get(stat_keys[i], 0.0)),
+			false)
+
+	var right = _build_team_preview_col(t_away, "AWAY",
+		match_data["played"] and match_data["away_score"] > match_data["home_score"],
+		away_ovr)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hb.add_child(right)
 
-func _build_team_preview_col(t: Resource, subtitle: String, is_winner: bool) -> VBoxContainer:
+func _build_team_preview_col(t: Resource, subtitle: String, is_winner: bool, ovr: int = 0) -> VBoxContainer:
 	var vb = VBoxContainer.new()
 	vb.alignment = BoxContainer.ALIGNMENT_CENTER
-	vb.add_theme_constant_override("separation", 5)
-	
+	vb.add_theme_constant_override("separation", 4)
+
 	var sub = Label.new()
 	sub.text = subtitle
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sub.add_theme_font_size_override("font_size", 14)
 	sub.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	vb.add_child(sub)
-	
+
 	var logo = TextureRect.new()
 	logo.texture = t.logo
-	logo.custom_minimum_size = Vector2(300, 300)
+	logo.custom_minimum_size = Vector2(220, 220)
 	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	logo.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vb.add_child(logo)
-	
+
 	var n_lbl = Label.new()
 	n_lbl.text = t.name
 	n_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	n_lbl.add_theme_font_size_override("font_size", 24)
+	n_lbl.add_theme_font_size_override("font_size", 22)
 	if is_winner:
 		n_lbl.add_theme_color_override("font_color", Color.GREEN_YELLOW)
 	elif t == LeagueManager.player_team:
 		n_lbl.add_theme_color_override("font_color", Color(0.0, 0.9, 1.0))
 	vb.add_child(n_lbl)
-	
+
+	# OVR badge
+	if ovr > 0:
+		var ovr_lbl = Label.new()
+		ovr_lbl.text = "OVR  %d" % ovr
+		ovr_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ovr_lbl.add_theme_font_size_override("font_size", 18)
+		ovr_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.1))
+		vb.add_child(ovr_lbl)
+
 	var r_lbl = Label.new()
 	r_lbl.text = "%d-%d" % [t.wins, t.losses]
 	r_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	r_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	vb.add_child(r_lbl)
 	
 	var h_sep = HSeparator.new()
@@ -2855,6 +3043,77 @@ func _build_team_preview_col(t: Resource, subtitle: String, is_winner: bool) -> 
 		
 	return vb
 
+func _preview_team_ovr(t: Resource) -> int:
+	if not t or t.roster.is_empty(): return 0
+	var total = 0.0
+	for p in t.roster:
+		total += (p.speed + p.shot + p.pass_skill + p.tackle + p.strength + p.aggression) / 6.0
+	return int(round(total / t.roster.size()))
+
+func _get_team_avgs(t: Resource) -> Dictionary:
+	var zero = {"speed": 0.0, "shot": 0.0, "pass_skill": 0.0, "tackle": 0.0, "strength": 0.0, "aggression": 0.0}
+	if not t or t.roster.is_empty(): return zero
+	var totals = zero.duplicate()
+	for p in t.roster:
+		for k in totals:
+			var v = p.get(k)
+			totals[k] += float(v) if v != null else 0.0
+	var n = float(t.roster.size())
+	for k in totals: totals[k] /= n
+	return totals
+
+func _add_stat_compare_row(parent: VBoxContainer, home_val: int, label: String, away_val: int, is_ovr: bool) -> void:
+	const WIN_C  = Color(0.2, 1.0, 0.45)
+	const LOSE_C = Color(0.45, 0.45, 0.55)
+	const TIE_C  = Color(0.7, 0.7, 0.8)
+	var fs = 18 if is_ovr else 15
+
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 2)
+	parent.add_child(row)
+
+	var h_lbl = Label.new()
+	h_lbl.text = str(home_val)
+	h_lbl.custom_minimum_size.x = 32
+	h_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	h_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h_lbl.add_theme_font_size_override("font_size", fs)
+	h_lbl.add_theme_color_override("font_color",
+		WIN_C if home_val > away_val else (LOSE_C if home_val < away_val else TIE_C))
+	row.add_child(h_lbl)
+
+	var h_arr = Label.new()
+	h_arr.text = "◀" if home_val > away_val else "  "
+	h_arr.add_theme_font_size_override("font_size", 11)
+	h_arr.add_theme_color_override("font_color", WIN_C)
+	h_arr.custom_minimum_size.x = 12
+	row.add_child(h_arr)
+
+	var s_lbl = Label.new()
+	s_lbl.text = label
+	s_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	s_lbl.custom_minimum_size.x = 52
+	s_lbl.add_theme_font_size_override("font_size", 12 if not is_ovr else 15)
+	s_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 1.0) if is_ovr else Color(0.55, 0.55, 0.65))
+	row.add_child(s_lbl)
+
+	var a_arr = Label.new()
+	a_arr.text = "▶" if away_val > home_val else "  "
+	a_arr.add_theme_font_size_override("font_size", 11)
+	a_arr.add_theme_color_override("font_color", WIN_C)
+	a_arr.custom_minimum_size.x = 12
+	row.add_child(a_arr)
+
+	var a_lbl = Label.new()
+	a_lbl.text = str(away_val)
+	a_lbl.custom_minimum_size.x = 32
+	a_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	a_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	a_lbl.add_theme_font_size_override("font_size", fs)
+	a_lbl.add_theme_color_override("font_color",
+		WIN_C if away_val > home_val else (LOSE_C if away_val < home_val else TIE_C))
+	row.add_child(a_lbl)
+
 func _get_p_rating(p: Resource) -> int:
 	if "speed" in p:
 		return int(round((p.speed + p.shot + p.pass_skill + p.tackle + p.strength + p.aggression) / 6.0))
@@ -2865,3 +3124,21 @@ func _attach_close_btn(parent: VBoxContainer, btn: Button):
 
 func _on_main_menu_pressed() -> void:
 	get_tree().change_scene_to_file("res://ui/main_menu.tscn")
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		_on_main_menu_pressed()
+
+func _on_free_agents_pressed() -> void:
+	get_tree().change_scene_to_file("res://ui/free_agent_market.tscn")
+
+func _fmt_funds(amount: int) -> String:
+	var s = str(amount)
+	var result = ""
+	var count = 0
+	for i in range(s.length() - 1, -1, -1):
+		if count > 0 and count % 3 == 0:
+			result = "," + result
+		result = s[i] + result
+		count += 1
+	return result

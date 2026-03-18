@@ -12,6 +12,8 @@ extends Control
 @onready var opt_lsize: OptionButton = $MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_LeagueSize/OptLeagueSize
 @onready var opt_gpo: OptionButton = $MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_GPO/OptGPO
 @onready var btn_items: Button = $MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid/HBox_Items/BtnItems
+@onready var options_panel: PanelContainer = $MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel
+@onready var options_grid: GridContainer = $MarginContainer/MainStack/MainHBox/VBoxContainer/OptionsPanel/OptionsGrid
 
 @onready var btn_start: Button = $MarginContainer/MainStack/MainHBox/VBoxContainer/ActionHBox/BtnStart
 @onready var btn_back: Button = $MarginContainer/MainStack/MainHBox/VBoxContainer/ActionHBox/BtnBack
@@ -32,6 +34,11 @@ extends Control
 var available_teams: Array = []
 var current_team_index: int = 0
 var selected_color_index: int = 0
+var _team_stat_bars: Dictionary = {}
+var _stats_card: PanelContainer = null
+
+var _ticker_copies: Array = []
+var _ticker_copy_width: float = 0.0
 
 # Curated sports color palette — (primary, secondary hint)
 const TEAM_COLORS: Array = [
@@ -52,6 +59,9 @@ const TEAM_COLORS: Array = [
 var _color_swatch_buttons: Array = []
 
 func _ready() -> void:
+	# Ensure the root node fills the screen
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	
 	# Build preview stubs for ALL 36 possible team names so the player
 	# can choose any franchise identity before the real league is generated.
 	available_teams = LeagueManager.build_all_team_stubs()
@@ -91,6 +101,123 @@ func _ready() -> void:
 	btn_right.pressed.connect(func(): _cycle_team(1))
 	opt_team_size.item_selected.connect(_on_team_size_changed)
 	
+	# High-Octane Setup Audio (Chrome Gauntlet)
+	var music = AudioStreamPlayer.new()
+	var stream = load("res://assets/sounds/Chrome_Gauntlet.mp3")
+	if stream is AudioStreamMP3:
+		stream.loop = true
+	music.stream = stream
+	music.bus = "Music"
+	add_child(music)
+	music.play()
+	
+	# 5. Help Ticker (Phase 41) - Direct child with robust anchoring
+	var ticker_panel = Panel.new()
+	add_child(ticker_panel)
+	ticker_panel.move_to_front()
+	ticker_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	var t_sb = StyleBoxFlat.new()
+	t_sb.bg_color = Color(0.01, 0.01, 0.02, 0.9)
+	t_sb.border_color = Color(0, 1, 1) # Cyan / Aqua for visibility
+	t_sb.set_border_width_all(3)
+	t_sb.border_width_top = 4
+	ticker_panel.add_theme_stylebox_override("panel", t_sb)
+	
+	ticker_panel.set_anchor(SIDE_LEFT, 0.0)
+	ticker_panel.set_anchor(SIDE_TOP, 1.0)
+	ticker_panel.set_anchor(SIDE_RIGHT, 1.0)
+	ticker_panel.set_anchor(SIDE_BOTTOM, 1.0)
+	ticker_panel.set_offset(SIDE_LEFT, 0)
+	ticker_panel.set_offset(SIDE_TOP, -60)
+	ticker_panel.set_offset(SIDE_RIGHT, 0)
+	ticker_panel.set_offset(SIDE_BOTTOM, 0)
+	
+	var ticker_clip = Control.new()
+	ticker_clip.clip_contents = true
+	ticker_clip.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ticker_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ticker_panel.add_child(ticker_clip)
+
+	var tackle_key = _get_action_key("action_tackle")
+	var shoot_key  = _get_action_key("action_shoot")
+	var pass_key   = _get_action_key("action_pass")
+	var sprint_key = _get_action_key("action_sprint")
+
+	var tips = [
+		{"key": "TACKLE:",       "value": "PRESS %s TO LUNGE AT OPPONENTS" % tackle_key,              "key_color": Color(0.0, 0.9, 1.0)},
+		{"key": "SHOOT:",        "value": "PRESS %s TO SHOOT OR PUNCH THE BALL" % shoot_key,          "key_color": Color(1.0, 0.85, 0.1)},
+		{"key": "PASS:",         "value": "PRESS %s TO PASS TO A TEAMMATE" % pass_key,                "key_color": Color(0.0, 0.9, 1.0)},
+		{"key": "SPRINT:",       "value": "HOLD %s TO BOOST YOUR SPEED" % sprint_key,                 "key_color": Color(1.0, 0.85, 0.1)},
+		{"key": "WIN BONUS:",    "value": "EARN $1,000 FOR EVERY GAME YOU WIN",                        "key_color": Color(0.0, 0.9, 1.0)},
+		{"key": "LOSS BONUS:",   "value": "EARN $500 JUST FOR PLAYING, EVEN IN DEFEAT",               "key_color": Color(1.0, 0.85, 0.1)},
+		{"key": "COINS:",        "value": "PICK UP COINS ON THE COURT FOR +$150 EACH",                "key_color": Color(0.0, 0.9, 1.0)},
+		{"key": "PROMOTION:",    "value": "WIN YOUR DIVISION CHAMPIONSHIP TO MOVE UP A TIER",         "key_color": Color(1.0, 0.85, 0.1)},
+		{"key": "RELEGATION:",   "value": "FINISH LAST IN YOUR DIVISION AND YOU'LL DROP A TIER",      "key_color": Color(0.0, 0.9, 1.0)},
+		{"key": "GAME OVER:",    "value": "FINISH LAST IN BRONZE AND YOUR FRANCHISE IS DISSOLVED",     "key_color": Color(1.0, 0.3, 0.3)},
+		{"key": "CHAMPIONSHIP:", "value": "WIN THE POSTSEASON TO EARN $5,000 AND A PROMOTION",        "key_color": Color(1.0, 0.85, 0.1)},
+		{"key": "SPEED:",        "value": "FASTER PLAYERS DRIBBLE & SPRINT BETTER",                   "key_color": Color(0.0, 0.9, 1.0)},
+		{"key": "STRENGTH:",     "value": "STRONGER PLAYERS WIN MORE COLLISIONS",                     "key_color": Color(1.0, 0.85, 0.1)},
+		{"key": "AGGRESSION:",   "value": "HIGH AGGRESSION MEANS MORE HITS & STEALS",                 "key_color": Color(0.0, 0.9, 1.0)},
+		{"key": "FREE AGENTS:",  "value": "SIGN PLAYERS BETWEEN SEASONS IN THE FRANCHISE HUB",        "key_color": Color(1.0, 0.85, 0.1)},
+		{"key": "TEAM SIZE:",    "value": "3v3 TO 5v5 SUPPORTED — CONFIGURE IN SETTINGS",             "key_color": Color(0.0, 0.9, 1.0)},
+		{"key": "LEAGUE SIZE:",  "value": "4 TO 12 TEAMS PER LEAGUE",                                 "key_color": Color(1.0, 0.85, 0.1)},
+		{"key": "HAZARDS:",      "value": "MINES & MISSILES CAN BE ENABLED IN SETTINGS",              "key_color": Color(0.0, 0.9, 1.0)},
+	]
+
+	var _fill_copy = func(target: HBoxContainer):
+		for d in tips:
+			var key_lbl = Label.new()
+			key_lbl.text = "  " + d["key"]
+			key_lbl.add_theme_font_size_override("font_size", 18)
+			key_lbl.add_theme_color_override("font_color", d["key_color"])
+			key_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			key_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			target.add_child(key_lbl)
+			var val_lbl = Label.new()
+			val_lbl.text = " " + d["value"]
+			val_lbl.add_theme_font_size_override("font_size", 18)
+			val_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 1.0))
+			val_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			val_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			target.add_child(val_lbl)
+			var sep = Label.new()
+			sep.text = "   |   "
+			sep.add_theme_font_size_override("font_size", 18)
+			sep.add_theme_color_override("font_color", Color(0.5, 0.4, 0.65))
+			sep.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			sep.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			target.add_child(sep)
+
+	var copy_a = HBoxContainer.new()
+	copy_a.custom_minimum_size.y = 60
+	copy_a.add_theme_constant_override("separation", 10)
+	ticker_clip.add_child(copy_a)
+
+	var copy_b = HBoxContainer.new()
+	copy_b.custom_minimum_size.y = 60
+	copy_b.add_theme_constant_override("separation", 10)
+	ticker_clip.add_child(copy_b)
+
+	# Seed copy_a with one raw pass to measure
+	_fill_copy.call(copy_a)
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var raw_w = copy_a.get_minimum_size().x
+	var screen_w = get_viewport_rect().size.x
+	var reps = max(1, int(ceil(screen_w / raw_w)))
+
+	# Fill remaining reps on copy_a, then mirror to copy_b
+	for _r in range(reps - 1):
+		_fill_copy.call(copy_a)
+	for _r in range(reps):
+		_fill_copy.call(copy_b)
+
+	_ticker_copy_width = copy_a.get_minimum_size().x
+	copy_b.position.x = _ticker_copy_width
+	_ticker_copies = [copy_a, copy_b]
 	# Color swatch — insert below team picker (above OptionsPanel)
 	var swatch_hbox = HBoxContainer.new()
 	swatch_hbox.name = "SwatchRow"
@@ -117,15 +244,8 @@ func _ready() -> void:
 		_color_swatch_buttons.append(btn)
 	_apply_swatch_styles()
 	
-	# Info Panel explaining bottom league & promo/relegation styling
-	var i_sb = StyleBoxFlat.new()
-	i_sb.bg_color = Color(0.1, 0.1, 0.15, 0.7)
-	i_sb.border_color = Color(0.0, 0.9, 1.0, 0.4)
-	i_sb.set_border_width_all(1)
-	i_sb.set_corner_radius_all(6)
-	i_sb.content_margin_left = 15; i_sb.content_margin_right = 15
-	i_sb.content_margin_top = 10; i_sb.content_margin_bottom = 10
-	info_panel.add_theme_stylebox_override("panel", i_sb)
+	# Info Panel styling moved to _update_ui to be team-reactive
+
 	
 	# Items Modal Binding
 	btn_items.pressed.connect(_open_items_modal)
@@ -140,20 +260,116 @@ func _ready() -> void:
 	var btn_reset = $MarginContainer/MainStack/MainHBox/RosterFrame/RosterVBox/BtnResetTeam
 	btn_reset.pressed.connect(_on_reset_pressed)
 	
-	# Keyboard / Gamepad binding
-	team_container.focus_mode = Control.FOCUS_ALL
-	team_container.gui_input.connect(_on_team_input)
-	team_container.focus_entered.connect(_update_team_border)
-	team_container.focus_exited.connect(_update_team_border)
+	# New "League Rules" button next to items
+	var btn_rules = Button.new()
+	btn_rules.text = " ⓘ League Rules "
+	btn_rules.name = "BtnRules"
+	options_grid.add_child(btn_rules)
+	btn_rules.pressed.connect(_show_league_rules)
+	
+	# Hide the old static info panel if it exists
+	if info_panel: info_panel.hide()
+
+	
+	# --- Two-Column Layout Restructuring ---
+	# We'll repurpose VBox_TeamDetails as the 'StatsColumn' and create a new 'SelectorColumn'
+	var stats_col = $MarginContainer/MainStack/MainHBox/VBoxContainer/VBox_Team/VBox_TeamDetails
+	var picker_margin = MarginContainer.new()
+	picker_margin.add_theme_constant_override("margin_left", 30)
+	team_container.add_child(picker_margin)
+	team_container.move_child(picker_margin, 0)
+	
+	var picker_col = VBoxContainer.new()
+	picker_col.name = "PickerColumn"
+	picker_col.custom_minimum_size = Vector2(250, 0)
+	picker_col.alignment = BoxContainer.ALIGNMENT_CENTER
+	picker_margin.add_child(picker_col)
+	
+	# Move Logo and Buttons into SelectorColumn
+	team_container.remove_child(btn_left)
+	team_container.remove_child(btn_right)
+	stats_col.remove_child(team_logo)
+	
+	picker_col.add_child(team_logo)
+	var nav_hbox = HBoxContainer.new()
+	nav_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	nav_hbox.add_theme_constant_override("separation", 40)
+	picker_col.add_child(nav_hbox)
+	nav_hbox.add_child(btn_left)
+	nav_hbox.add_child(btn_right)
+	
+	# 1. Header Margin Wrapper
+	var stats_margin = MarginContainer.new()
+	stats_margin.add_theme_constant_override("margin_right", 20)
+	stats_col.add_child(stats_margin)
+	
+	var content_vbox = VBoxContainer.new()
+	content_vbox.add_theme_constant_override("separation", 15)
+	stats_margin.add_child(content_vbox)
+	
+	stats_col.remove_child(team_name)
+	stats_col.remove_child(team_rating)
+	
+	# Add directly to internal VBox for vertical stacking and shared margin
+	content_vbox.add_child(team_name)
+	content_vbox.add_child(team_rating)
+	
+	# Center the rating pill horizontally
+	team_rating.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	
+	# Ensure vertical centering for alignment
+	team_name.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	team_rating.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	team_rating.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	
+	_stats_card = PanelContainer.new()
+	content_vbox.add_child(_stats_card)
+	
+	var stats_grid = GridContainer.new()
+	stats_grid.columns = 2
+	stats_grid.add_theme_constant_override("h_separation", 30)
+	stats_grid.add_theme_constant_override("v_separation", 10)
+	_stats_card.add_child(stats_grid)
+	
+	var stat_keys = ["speed", "shot", "pass_skill", "tackle", "strength", "aggression"]
+	var stat_names = ["Speed", "Shooting", "Passing", "Tackle", "Strength", "Aggression"]
+	
+	for i in range(stat_keys.size()):
+		var s_vbox = VBoxContainer.new()
+		s_vbox.custom_minimum_size = Vector2(180, 0)
+		
+		var s_label = Label.new()
+		s_label.text = stat_names[i]
+		s_label.add_theme_font_size_override("font_size", 14)
+		s_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+		s_vbox.add_child(s_label)
+		
+		var pb = ProgressBar.new()
+		pb.show_percentage = false
+		pb.custom_minimum_size.y = 10
+		s_vbox.add_child(pb)
+		_team_stat_bars[stat_keys[i]] = pb
+		
+		stats_grid.add_child(s_vbox)
+	
+	team_container.custom_minimum_size = Vector2(750, 420)
+	team_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	team_container.add_theme_constant_override("separation", 60)
 	
 	_apply_styling()
 	_on_team_size_changed(0)
 	_update_ui()
 	team_container.grab_focus()
+	SceneManager.notify_scene_ready()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_accept") and not items_modal.visible:
 		_on_start_pressed()
+	elif event.is_action_pressed("ui_cancel"):
+		if items_modal.visible:
+			_close_items_modal()
+		else:
+			_on_back_pressed()
 
 func _on_team_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_up") or event.is_action_pressed("ui_left"):
@@ -246,15 +462,66 @@ func _update_ui() -> void:
 	
 	team_name.text = t.name
 	team_name.add_theme_color_override("font_color", chosen)
-	team_rating.text = "OVR: %d" % _get_team_rating(t)
-	team_rating.add_theme_color_override("font_color", chosen.lightened(0.2))
+	team_name.add_theme_font_size_override("font_size", 44)
+	
+	team_rating.text = "OVERALL: %d" % _get_team_rating(t)
+	team_rating.add_theme_color_override("font_color", Color.WHITE)
+	team_rating.add_theme_font_size_override("font_size", 22)
+	
+	# Badge style for the rating
+	var rating_sb = StyleBoxFlat.new()
+	rating_sb.bg_color = chosen.darkened(0.6)
+	rating_sb.bg_color.a = 0.8
+	rating_sb.border_color = chosen.lightened(0.3)
+	rating_sb.set_border_width_all(2)
+	rating_sb.set_corner_radius_all(20) # Pill shape
+	rating_sb.content_margin_left = 48
+	rating_sb.content_margin_right = 48
+	rating_sb.content_margin_top = 8
+	rating_sb.content_margin_bottom = 8
+	team_rating.add_theme_stylebox_override("normal", rating_sb)
+	
+	# Update Stats Card Styling
+	if _stats_card:
+		var sc_sb = StyleBoxFlat.new()
+		sc_sb.bg_color = Color(0.06, 0.06, 0.1, 0.6)
+		sc_sb.border_color = chosen.darkened(0.2)
+		sc_sb.set_border_width_all(2)
+		sc_sb.set_corner_radius_all(10)
+		sc_sb.content_margin_left = 30
+		sc_sb.content_margin_right = 30
+		sc_sb.content_margin_top = 20
+		sc_sb.content_margin_bottom = 20
+		_stats_card.add_theme_stylebox_override("panel", sc_sb)
+	
+	# Update Team Average Stat Bars
+	var averages = _get_team_averages(t)
+	for key in _team_stat_bars:
+		var bar = _team_stat_bars[key]
+		var val = averages.get(key, 0.0)
+		bar.value = val
+		
+		# Polished styling for bars
+		var fb = StyleBoxFlat.new()
+		fb.bg_color = chosen.lerp(Color.WHITE, 0.2)
+		fb.set_corner_radius_all(5)
+		bar.add_theme_stylebox_override("fill", fb)
+		
+		var bb = StyleBoxFlat.new()
+		bb.bg_color = Color(0.18, 0.18, 0.25, 0.8)
+		bb.set_corner_radius_all(5)
+		bar.add_theme_stylebox_override("background", bb)
+	
 	team_logo.texture = t.logo
 	
 	for btn in [btn_left, btn_right]:
 		btn.add_theme_color_override("font_color", chosen.darkened(0.3))
 		btn.add_theme_color_override("font_hover_color", chosen.lightened(0.2))
 		
+	_style_main_action_buttons(chosen)
 	_update_team_border()
+	_update_settings_styling(chosen)
+	_update_info_panel_styling(chosen)
 	
 	# Populate Roster List
 	for c in roster_list.get_children():
@@ -352,8 +619,9 @@ func _update_ui() -> void:
 		
 		var ovr_lbl = Label.new()
 		var p_ovr = int(round((p.speed + p.shot + p.pass_skill + p.tackle + p.strength + p.aggression) / 6.0))
-		ovr_lbl.text = "OVR: %d" % p_ovr
-		ovr_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
+		ovr_lbl.text = "OVERALL: %d" % p_ovr
+		ovr_lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.2)) # Bright Gold
+		ovr_lbl.add_theme_font_size_override("font_size", 20)
 		header_hbox.add_child(ovr_lbl)
 		
 		var stat_panel = PanelContainer.new()
@@ -437,7 +705,7 @@ func _update_ui() -> void:
 		pvbox.add_child(actions_hbox)
 		
 		var btn_rand = Button.new()
-		btn_rand.text = " 🎲 New Player "
+		btn_rand.text = " New Player "
 		btn_rand.custom_minimum_size = Vector2(40, 40)
 		btn_rand.add_theme_font_size_override("font_size", 14)
 		var rand_click_idx = i
@@ -485,6 +753,20 @@ func _get_team_rating(team: Resource) -> int:
 		total += p_rating
 	return int(round(total / team.roster.size()))
 
+func _get_team_averages(team: Resource) -> Dictionary:
+	if team.roster.is_empty(): 
+		return {"speed":0,"shot":0,"pass_skill":0,"tackle":0,"strength":0,"aggression":0}
+	
+	var totals = {"speed":0.0,"shot":0.0,"pass_skill":0.0,"tackle":0.0,"strength":0.0,"aggression":0.0}
+	for p in team.roster:
+		for key in totals.keys():
+			totals[key] += float(p.get(key))
+			
+	var count = float(team.roster.size())
+	for key in totals.keys():
+		totals[key] /= count
+	return totals
+
 func _open_items_modal() -> void:
 	items_modal.visible = true
 	btn_modal_close.grab_focus()
@@ -509,9 +791,18 @@ func _update_items_button_text() -> void:
 	var enabled_count = 0
 	for v in items.values():
 		if v: enabled_count += 1
-	if enabled_count == items.size(): btn_items.text = "All Enabled ▸"
-	elif enabled_count == 0: btn_items.text = "All Disabled ▸"
-	else: btn_items.text = "%d / %d Enabled ▸" % [enabled_count, items.size()]
+	if enabled_count == items.size(): btn_items.text = "All Enabled ▶"
+	elif enabled_count == 0: btn_items.text = "All Disabled ▶"
+	else: btn_items.text = "%d / %d Enabled ▶" % [enabled_count, items.size()]
+
+func _process(delta: float) -> void:
+	# Ticker Animation (Phase 41)
+	if _ticker_copies.size() == 2 and _ticker_copy_width > 0:
+		for c in _ticker_copies:
+			c.position.x -= 100.0 * delta
+			if c.position.x + _ticker_copy_width <= 0.0:
+				var other = _ticker_copies[1] if c == _ticker_copies[0] else _ticker_copies[0]
+				c.position.x = other.position.x + _ticker_copy_width
 
 func _update_season_length_options() -> void:
 	if not opt_gpo: return
@@ -659,3 +950,139 @@ func _style_button_subtle(btn: Button) -> void:
 	btn.add_theme_stylebox_override("focus", f)
 	btn.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	btn.add_theme_color_override("font_hover_color", Color(0.8, 0.8, 0.9))
+func _update_settings_styling(chosen: Color) -> void:
+	if not options_panel: return
+	
+	# 1. Glassmorphism Card for Settings
+	var op_sb = StyleBoxFlat.new()
+	op_sb.bg_color = Color(0.08, 0.08, 0.12, 0.75)
+	op_sb.border_color = chosen.darkened(0.1)
+	op_sb.border_color.a = 0.5
+	op_sb.set_border_width_all(2)
+	op_sb.set_corner_radius_all(12)
+	op_sb.content_margin_left = 24
+	op_sb.content_margin_right = 24
+	op_sb.content_margin_top = 20
+	op_sb.content_margin_bottom = 20
+	options_panel.add_theme_stylebox_override("panel", op_sb)
+	
+	# 2. Style OptionButtons and Items Button
+	var dropdowns = [opt_quarters, opt_team_size, opt_lsize, opt_gpo]
+	for opt in dropdowns:
+		_style_league_option(opt, chosen)
+	
+	_style_league_button(btn_items, chosen)
+
+func _style_league_option(opt: OptionButton, accent: Color) -> void:
+	var sb_n = StyleBoxFlat.new()
+	sb_n.bg_color = Color(0.15, 0.15, 0.22, 0.8)
+	sb_n.border_color = accent.darkened(0.4)
+	sb_n.set_border_width_all(1)
+	sb_n.set_corner_radius_all(6)
+	sb_n.content_margin_left = 12
+	sb_n.content_margin_right = 12
+	sb_n.content_margin_top = 6
+	sb_n.content_margin_bottom = 6
+	
+	var sb_h = sb_n.duplicate()
+	sb_h.bg_color = Color(0.2, 0.2, 0.3, 0.9)
+	sb_h.border_color = accent.lightened(0.2)
+	
+	opt.add_theme_stylebox_override("normal", sb_n)
+	opt.add_theme_stylebox_override("hover", sb_h)
+	opt.add_theme_stylebox_override("pressed", sb_h)
+	opt.add_theme_font_size_override("font_size", 15)
+	
+	# Style the popup menu too
+	var puzzle = opt.get_popup()
+	var psb = StyleBoxFlat.new()
+	psb.bg_color = Color(0.08, 0.08, 0.12, 0.98)
+	psb.border_color = accent
+	psb.set_border_width_all(1)
+	psb.set_corner_radius_all(6)
+	puzzle.add_theme_stylebox_override("panel", psb)
+	puzzle.add_theme_font_size_override("font_size", 14)
+
+func _style_league_button(btn: Button, accent: Color) -> void:
+	var sb_n = StyleBoxFlat.new()
+	sb_n.bg_color = accent.darkened(0.5)
+	sb_n.bg_color.a = 0.6
+	sb_n.border_color = accent.lightened(0.1)
+	sb_n.set_border_width_all(2)
+	sb_n.set_corner_radius_all(6)
+	sb_n.content_margin_left = 16
+	sb_n.content_margin_right = 16
+	sb_n.content_margin_top = 6
+	sb_n.content_margin_bottom = 6
+	
+	var sb_h = sb_n.duplicate()
+	sb_h.bg_color = accent.darkened(0.3)
+	sb_h.bg_color.a = 0.9
+	
+	btn.add_theme_stylebox_override("normal", sb_n)
+	btn.add_theme_stylebox_override("hover", sb_h)
+	btn.add_theme_stylebox_override("pressed", sb_h.duplicate())
+	btn.add_theme_font_size_override("font_size", 15)
+	btn.add_theme_color_override("font_color", Color.WHITE)
+
+func _style_main_action_buttons(accent: Color) -> void:
+	# 1. START button (Primary)
+	var sb_start_n = StyleBoxFlat.new()
+	sb_start_n.bg_color = accent.darkened(0.2)
+	sb_start_n.border_color = accent.lightened(0.3)
+	sb_start_n.set_border_width_all(3)
+	sb_start_n.set_corner_radius_all(10)
+	sb_start_n.content_margin_top = 15; sb_start_n.content_margin_bottom = 15
+	sb_start_n.content_margin_left = 40; sb_start_n.content_margin_right = 40
+	
+	var sb_start_h = sb_start_n.duplicate()
+	sb_start_h.bg_color = accent
+	sb_start_h.shadow_color = accent
+	sb_start_h.shadow_size = 8
+	
+	btn_start.add_theme_stylebox_override("normal", sb_start_n)
+	btn_start.add_theme_stylebox_override("hover", sb_start_h)
+	btn_start.add_theme_stylebox_override("pressed", sb_start_n.duplicate())
+	btn_start.add_theme_font_size_override("font_size", 22)
+	btn_start.add_theme_color_override("font_color", Color.WHITE)
+	
+	# 2. BACK button (Secondary)
+	var sb_back_n = StyleBoxFlat.new()
+	sb_back_n.bg_color = Color(0.1, 0.1, 0.15, 0.6)
+	sb_back_n.border_color = accent.darkened(0.4)
+	sb_back_n.set_border_width_all(2)
+	sb_back_n.set_corner_radius_all(10)
+	sb_back_n.content_margin_top = 15; sb_back_n.content_margin_bottom = 15
+	sb_back_n.content_margin_left = 30; sb_back_n.content_margin_right = 30
+	
+	var sb_back_h = sb_back_n.duplicate()
+	sb_back_h.bg_color = Color(0.15, 0.15, 0.22, 0.8)
+	sb_back_h.border_color = accent
+	
+	btn_back.add_theme_stylebox_override("normal", sb_back_n)
+	btn_back.add_theme_stylebox_override("hover", sb_back_h)
+	btn_back.add_theme_stylebox_override("pressed", sb_back_n.duplicate())
+	btn_back.add_theme_font_size_override("font_size", 18)
+	btn_back.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
+	btn_back.add_theme_color_override("font_hover_color", Color.WHITE)
+
+func _update_info_panel_styling(accent: Color) -> void:
+	# Also update the Rules button in the grid
+	var btn_rules = options_grid.get_node_or_null("BtnRules")
+	if btn_rules:
+		_style_league_button(btn_rules, accent)
+
+func _show_league_rules() -> void:
+	var rules_script = load("res://ui/league_rules_modal.gd")
+	var rules_inst = Control.new()
+	rules_inst.set_script(rules_script)
+	rules_inst.accent_color = _get_chosen_color()
+	add_child(rules_inst)
+
+func _get_action_key(action: String) -> String:
+	if not InputMap.has_action(action):
+		return "?"
+	for e in InputMap.action_get_events(action):
+		if e is InputEventKey:
+			return OS.get_keycode_string(e.keycode)
+	return "?"

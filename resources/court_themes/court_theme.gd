@@ -18,3 +18,9 @@ class_name CourtTheme
 @export var hazard_count: int = 0
 @export var procedural_wood: bool = false
 @export var has_bleachers: bool = false
+# Special environment flags
+@export var no_out_of_bounds: bool = false  # Ball never triggers OOB; bounces off walls (The Cage)
+@export var outdoor: bool = false           # Skip gym building shell (Rooftop)
+@export var low_ceiling: bool = false       # Add a low concrete ceiling (Underground Garage)
+@export var has_pillars: bool = false       # Add concrete pillar obstacles (Underground Garage)
+@export var cage_walls: bool = false        # Add chain-link fence walls (The Cage)

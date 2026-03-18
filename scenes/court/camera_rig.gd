@@ -8,9 +8,11 @@ extends Node3D
 @export var look_ahead: float = 2.0  # How far ahead of the ball to look
 
 var target: Node3D = null
+var locked: bool = false   # when true the rig holds its position (e.g. OOB dead-ball)
 @onready var camera: Camera3D = $Camera3D
 
 func _ready() -> void:
+	add_to_group("camera_rig")
 	_setup_camera()
 	# Find ball to follow
 	await get_tree().process_frame
@@ -30,6 +32,8 @@ func _setup_camera() -> void:
 	camera.current = true
 
 func _process(delta: float) -> void:
+	if locked:
+		return
 	if target == null:
 		return
 	

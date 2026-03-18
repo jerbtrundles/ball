@@ -27,11 +27,20 @@ var type_names: Dictionary = {
 	PowerUpType.FREEZE: "freeze",
 }
 
+var _pickup_sounds: Dictionary = {}
+
 func _ready() -> void:
 	add_to_group("hazards")
 	_base_y = position.y + 0.8
 	_build_visuals()
 	_build_trigger()
+	
+	_pickup_sounds = {
+		PowerUpType.SPEED: load("res://assets/sounds/powerUp-1.wav"),
+		PowerUpType.ACCURACY: load("res://assets/sounds/powerUp-2.wav"),
+		PowerUpType.TACKLE: load("res://assets/sounds/powerUp-3.wav"),
+		PowerUpType.FREEZE: load("res://assets/sounds/powerUp-4.wav"),
+	}
 
 func _build_visuals() -> void:
 	var color = type_colors.get(power_type, Color.WHITE)
@@ -182,6 +191,17 @@ func _process_pickup(body: Node3D) -> void:
 		var color = type_colors.get(power_type, Color.WHITE)
 		if VFX:
 			VFX.spawn_pickup_pop(global_position, color)
+		
+		# Feedback Sound
+		var sound = _pickup_sounds.get(power_type)
+		if sound:
+			var player = AudioStreamPlayer3D.new()
+			player.stream = sound
+			player.bus = "SFX"
+			player.global_position = global_position
+			get_tree().current_scene.add_child(player)
+			player.play()
+			player.finished.connect(player.queue_free)
 		
 		if power_type == PowerUpType.FREEZE:
 			# Freeze applies to all players on the OPPOSING team

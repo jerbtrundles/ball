@@ -64,6 +64,24 @@ static func _load_portraits():
 			else:
 				_portrait_pool.append(tex)
 
+# Visual / physical traits (randomized at creation, not editable in-game)
+@export var body_height: float = 1.0   # 0.82 = short, 1.0 = average, 1.18 = tall
+@export var body_build: float  = 1.0   # 0.85 = lean, 1.0 = average, 1.18 = heavy
+@export var skin_tone: Color   = Color(0.85, 0.65, 0.45)
+
+static func _random_skin_tone() -> Color:
+	var tones: Array[Color] = [
+		Color(0.98, 0.83, 0.72),  # very light
+		Color(0.92, 0.73, 0.58),  # fair
+		Color(0.85, 0.65, 0.45),  # medium
+		Color(0.75, 0.55, 0.38),  # tan
+		Color(0.62, 0.44, 0.30),  # warm brown
+		Color(0.46, 0.30, 0.20),  # brown
+		Color(0.30, 0.19, 0.12),  # dark brown
+		Color(0.20, 0.13, 0.09),  # very dark
+	]
+	return tones[randi() % tones.size()]
+
 # Stats (0-10 or 0-100 scale)
 @export var speed: float = 5.0
 @export var shot: float = 5.0
@@ -109,11 +127,30 @@ func randomize_stats(tier: int = 1):
 	tackle = clampf(round(randfn(base, 15.0)), 10.0, 99.0)
 	strength = clampf(round(randfn(base, 15.0)), 10.0, 99.0)
 	aggression = clampf(round(randfn(base, 15.0)), 10.0, 99.0)
+	# Physical traits — independent of tier
+	body_height = clampf(randfn(1.0, 0.09), 0.82, 1.18)
+	body_build  = clampf(randfn(1.0, 0.08), 0.85, 1.18)
+	skin_tone   = PlayerData._random_skin_tone()
 
 func randomize_with_archetype(tier: int = 1):
 	var base = float(tier) * 20.0 + 20.0
 	var archetypes = ["shooter", "passer", "rebounder", "balanced"]
 	var archetype = archetypes[randi() % archetypes.size()]
+	# Physical traits — biased by archetype for visual variety
+	skin_tone   = PlayerData._random_skin_tone()
+	match archetype:
+		"rebounder":  # Tall and heavy
+			body_height = clampf(randfn(1.10, 0.06), 0.90, 1.18)
+			body_build  = clampf(randfn(1.10, 0.06), 0.92, 1.18)
+		"shooter":    # Average height, lean
+			body_height = clampf(randfn(1.00, 0.08), 0.85, 1.15)
+			body_build  = clampf(randfn(0.92, 0.06), 0.85, 1.05)
+		"passer":     # Lean and quick-looking
+			body_height = clampf(randfn(0.97, 0.07), 0.84, 1.12)
+			body_build  = clampf(randfn(0.90, 0.06), 0.85, 1.02)
+		_:            # Balanced — full range
+			body_height = clampf(randfn(1.00, 0.09), 0.82, 1.18)
+			body_build  = clampf(randfn(1.00, 0.08), 0.85, 1.18)
 	
 	var min_stat = 10.0
 	var max_stat = min(base + 25.0, 99.0)

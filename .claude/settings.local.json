@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep:*)",
+      "Bash(xargs ls:*)",
+      "Bash(grep -r \"start_quick_match\\\\|pending_match_data\\\\[\" /c/ball/ui/*.gd)",
+      "Bash(ls -la /c/ball/ui/*.tscn)",
+      "Bash(ls -la /c/ball/scenes/**/*.tscn)",
+      "Bash(python3 -c \":*)",
+      "Bash(grep -r \"SceneManager.change_scene\\\\|change_scene_to_file\" /c/ball/ui/*.gd /c/ball/scripts/*.gd)",
+      "Bash(grep -l \"notify_scene_ready\" /c/ball/ui/*.gd /c/ball/scripts/*.gd)",
+      "Bash(grep -n \"text = <\\\\|text = >\\\\|text = X\\\\| -> \" /c/ball/ui/*.gd)",
+      "Bash(grep -n \"notify_scene_ready\" /c/ball/ui/*.gd)"
+    ]
+  }
+}

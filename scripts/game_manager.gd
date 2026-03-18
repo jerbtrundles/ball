@@ -21,6 +21,9 @@ enum MatchState { PRE_GAME, TIP_OFF, PLAYING, SCORED, THROW_IN, QUARTER_BREAK, G
 var match_state: MatchState = MatchState.PRE_GAME
 var is_debug: bool = false
 var is_season_game: bool = false
+var is_tournament_game: bool = false
+var is_survival_game: bool = false
+var no_out_of_bounds: bool = false  # True for The Cage — OOB signal is ignored
 var current_quarter: int = 1
 var time_remaining: float = 0.0
 var scores: Array[int] = [0, 0]
@@ -34,11 +37,11 @@ var sides_flipped: bool = false
 var tip_off_winner: int = -1   # Team that won the initial tip-off
 var possession_arrow: int = -1 # Alternating possession: next inbound goes to this team
 
-# Coin combo tracking
-var _coin_combo_count: int = 0
-var _coin_combo_team: int = -1
-var _coin_combo_id: int = 0 # Incremented each pickup; used to detect stale resets
-const COIN_COMBO_WINDOW: float = 2.5
+# Wall scoreboard
+var _sb_score_labels: Array[Label3D] = []
+var _sb_quarter_label: Label3D = null
+var _sb_built: bool = false
+
 
 # Court geometry
 var court_length: float = 30.0
@@ -81,6 +84,17 @@ func _ready() -> void:
 	var vfx = get_node_or_null("/root/VFX")
 	if vfx:
 		vfx.screen_shake_requested.connect(_on_screen_shake)
+	
+	# In-Game Soundtrack (Cybernetic Wasteland)
+	var music = AudioStreamPlayer.new()
+	var stream = load("res://assets/sounds/Cybernetic_Wasteland.mp3")
+	if stream is AudioStreamMP3:
+		stream.loop = true
+	music.stream = stream
+	music.bus = "Music"
+	music.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(music)
+	music.play()
 		
 	await get_tree().process_frame
 	
@@ -104,10 +118,16 @@ func setup_match(team0_data: Resource, team1_data: Resource, config: Dictionary 
 	
 	is_debug = config.get("is_debug", false)
 	is_season_game = config.get("is_season_game", false)
+	is_tournament_game = config.get("is_tournament_game", false)
+	is_survival_game = config.get("is_survival_game", false)
+	no_out_of_bounds = config.get("no_out_of_bounds", false)
 	
 	var items_enabled = config.get("items_enabled", true)
 	var human_team = config.get("human_team_index", 0)
 	var team_size = config.get("team_size", 3)
+	
+	# Set player team index so items/scoring know which team is the human's
+	LeagueManager.player_team_index = human_team
 	
 	# Clear existing players
 	get_tree().call_group("players", "queue_free")
@@ -135,26 +155,51 @@ func setup_match(team0_data: Resource, team1_data: Resource, config: Dictionary 
 	team_data_store = [team0_data, team1_data]
 	teams_updated.emit(team0_data, team1_data)
 	var PlayerScene = load("res://scenes/characters/player.tscn")
-	
+
+	SceneManager.report_progress(0.93, "Spawning players…")
+
 	# Spawn Team 0
 	_spawn_team(team0_data, 0, PlayerScene, human_team, team_size)
+
+	SceneManager.report_progress(0.95, "Spawning players…")
+
 	# Spawn Team 1
 	_spawn_team(team1_data, 1, PlayerScene, human_team, team_size)
-	
+
+	SceneManager.report_progress(0.97, "Applying court theme…")
+
 	# Apply Court Theme
 	var theme_index = config.get("court_theme_index", 0)
 	_apply_court_theme(theme_index, team0_data)
-	
+
+	# Wall scoreboard (built once per match; destroyed with the scene)
+	if not _sb_built:
+		_build_wall_scoreboard()
+		score_changed.connect(_update_scoreboard)
+		quarter_changed.connect(_update_scoreboard_quarter)
+		_sb_built = true
+
+	SceneManager.report_progress(0.99, "Starting match…")
+
 	# Start match
 	start_match()
+
+	# Loading screen can now be dismissed — match is fully ready
+	SceneManager.notify_scene_ready()
 
 func _apply_court_theme(theme_index: int, home_team: Resource) -> void:
 	var court_builder = get_tree().get_first_node_in_group("court_builder")
 	if not court_builder or not court_builder.has_method("apply_theme"):
 		return
-	
+
 	var theme: CourtTheme = CourtThemes.get_preset(theme_index, home_team)
-	court_builder.apply_theme(theme)
+	var t0_color = home_team.color_primary if home_team else Color(0.2, 0.5, 1.0)
+	var t1_color = team_data_store[1].color_primary if team_data_store[1] else Color(1.0, 0.3, 0.2)
+	court_builder.apply_theme(theme, t0_color, t1_color)
+
+	# Inherit OOB behaviour from the court theme (e.g. The Cage disables OOB)
+	if theme and "no_out_of_bounds" in theme and theme.no_out_of_bounds:
+		no_out_of_bounds = true
 
 func _spawn_team(team_data: Resource, team_idx: int, player_scene: PackedScene, human_team_idx: int, team_size: int = 3) -> void:
 	var roster = team_data.roster
@@ -187,12 +232,19 @@ func _spawn_team(team_data: Resource, team_idx: int, player_scene: PackedScene, 
 				ai.player = player
 		
 		# Apply Stats
-		player.move_speed = 6.0 + (p_data.speed * 0.04)
-		player.shot_power = 10.0 + (p_data.shot * 0.05)
-		player.pass_power = 12.0 + (p_data.pass_skill * 0.05)
-		player.tackle_force = 12.0 + (p_data.tackle * 0.06)
-		player.strength = 1.0 + (p_data.strength * 0.01)
+		player.move_speed   = 6.0  + (p_data.speed     * 0.04)
+		# Sprint multiplier scales with speed: slow players get 1.5×, fast players up to ~1.8×
+		player.sprint_speed = player.move_speed * (1.5 + p_data.speed * 0.003)
+		player.shot_power   = 10.0 + (p_data.shot      * 0.05)
+		player.shot_skill   = p_data.shot   # 0-99 accuracy rating for shot-% formula
+		player.pass_power   = 12.0 + (p_data.pass_skill * 0.05)
+		player.tackle_force = 12.0 + (p_data.tackle    * 0.06)
+		player.strength     = 1.0  + (p_data.strength  * 0.01)
 		player.aggressiveness = p_data.aggression
+		# Physical traits (set before add_sibling so _setup_visuals picks them up)
+		player.body_height  = p_data.body_height
+		player.body_build   = p_data.body_build
+		player.skin_tone    = p_data.skin_tone
 		
 		# Colors
 		if "custom_team_color" in player:
@@ -269,60 +321,156 @@ func _find_teams() -> void:
 				# Add jersey labels since _setup_visuals already ran before we set the number
 				_add_jersey_labels(p)
 
+func _build_wall_scoreboard() -> void:
+	## Mounts a scoreboard panel on the inner face of the North gym wall.
+	## The North wall sits at z = -29.0 (GHZ); its inner face is at z ≈ -28.55.
+	## Labels face south (rotation_degrees.y = 180) so they read from the court.
+	const SB_Z   := -28.4    # just inside north wall inner face
+	const SB_Y   := 6.8      # mid-height — above foam pads, below windows
+	const PSIZE  := 0.014    # pixel_size for all scoreboard labels
+	const FS_NAME := 72      # font_size for team names
+	const FS_SCORE := 110    # font_size for score digits
+	const FS_SMALL := 48     # font_size for quarter label
+
+	var t0 = team_data_store[0]
+	var t1 = team_data_store[1]
+	var name0 = t0.name.to_upper() if t0 else "HOME"
+	var name1 = t1.name.to_upper() if t1 else "AWAY"
+	var col0  = t0.color_primary if t0 else Color(0.2, 0.5, 1.0)
+	var col1  = t1.color_primary if t1 else Color(1.0, 0.3, 0.2)
+
+	var sb_root = Node3D.new()
+	sb_root.name = "WallScoreboard"
+	add_child(sb_root)
+
+	# ── Backing panel ────────────────────────────────────────────────────────
+	var panel = MeshInstance3D.new()
+	var pm = BoxMesh.new()
+	pm.size = Vector3(11.0, 2.8, 0.18)
+	panel.mesh = pm
+	var panel_mat = StandardMaterial3D.new()
+	panel_mat.albedo_color = Color(0.06, 0.06, 0.08)
+	panel_mat.roughness = 0.9
+	panel.material_override = panel_mat
+	panel.position = Vector3(0, SB_Y, SB_Z)
+	sb_root.add_child(panel)
+
+	# Thin accent border (slightly proud of panel face)
+	var border = MeshInstance3D.new()
+	var bm = BoxMesh.new()
+	bm.size = Vector3(11.2, 2.95, 0.06)
+	border.mesh = bm
+	var border_mat = StandardMaterial3D.new()
+	border_mat.albedo_color = Color(0.3, 0.3, 0.35)
+	border_mat.roughness = 0.8
+	border.material_override = border_mat
+	border.position = Vector3(0, SB_Y, SB_Z + 0.12)
+	sb_root.add_child(border)
+
+	# ── Helper: create a Label3D facing south ────────────────────────────────
+	var make_label = func(txt: String, fs: int, col: Color, x: float, y: float, bold := false) -> Label3D:
+		var lbl = Label3D.new()
+		lbl.text = txt
+		lbl.font_size = fs
+		lbl.pixel_size = PSIZE
+		lbl.modulate = col
+		lbl.outline_size = 8
+		lbl.outline_modulate = Color(0, 0, 0, 0.8)
+		lbl.position = Vector3(x, y, SB_Z - 0.12)   # face of panel (south side)
+		lbl.rotation_degrees = Vector3(0, 180, 0)     # face into the court
+		lbl.no_depth_test = false
+		lbl.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+		sb_root.add_child(lbl)
+		return lbl
+
+	# ── Team 0 (left side) ───────────────────────────────────────────────────
+	make_label.call(name0, FS_NAME, col0, -3.8, SB_Y + 0.75)
+	var sc0: Label3D = make_label.call("0", FS_SCORE, Color.WHITE, -3.8, SB_Y - 0.30)
+	_sb_score_labels.append(sc0)
+
+	# ── Divider "–" ──────────────────────────────────────────────────────────
+	make_label.call("—", FS_SCORE, Color(0.4, 0.4, 0.45), 0.0, SB_Y - 0.30)
+
+	# ── Team 1 (right side) ──────────────────────────────────────────────────
+	make_label.call(name1, FS_NAME, col1, 3.8, SB_Y + 0.75)
+	var sc1: Label3D = make_label.call("0", FS_SCORE, Color.WHITE, 3.8, SB_Y - 0.30)
+	_sb_score_labels.append(sc1)
+
+	# ── Quarter label (bottom center) ────────────────────────────────────────
+	_sb_quarter_label = make_label.call("Q1", FS_SMALL, Color(0.7, 0.7, 0.75), 0.0, SB_Y + 0.72)
+
+func _update_scoreboard(team_index: int, new_score: int) -> void:
+	if team_index < _sb_score_labels.size() and is_instance_valid(_sb_score_labels[team_index]):
+		_sb_score_labels[team_index].text = str(new_score)
+
+func _update_scoreboard_quarter(q: int) -> void:
+	if is_instance_valid(_sb_quarter_label):
+		_sb_quarter_label.text = "Q%d" % q
+
 func _add_jersey_labels(player_node: CharacterBody3D) -> void:
-	# Remove existing jersey labels (if already there)
+	# Get the torso so labels parent to it and move/scale with the model
+	var torso = player_node.get_node_or_null("ModelRoot/Torso")
+	var label_parent: Node3D = torso if torso else player_node
+
+	# Remove existing labels from both possible parents
 	for child in player_node.get_children():
 		if child.name.begins_with("JerseyNum_") or child.name.begins_with("JerseyName_") or child.name == "JerseyLogo":
 			child.queue_free()
-	
+	if torso:
+		for child in torso.get_children():
+			if child.name.begins_with("JerseyNum_") or child.name.begins_with("JerseyName_") or child.name.begins_with("JerseyNumber") or child.name == "JerseyLogo":
+				child.queue_free()
+
+	# Positions below are relative to the torso center (torso sits at y=0.9 in model space).
+	# Front face = +Z (z=+0.155), back face = -Z (z=-0.155).
 	var num = player_node.jersey_number if "jersey_number" in player_node else 0
-	
+
 	if num > 0:
 		var label = Label3D.new()
 		label.name = "JerseyNum_Front"
 		label.text = str(num)
 		label.font_size = 64
 		label.pixel_size = 0.004
-		label.position = Vector3(0, 0.72, 0.37) # Front is +Z
+		label.position = Vector3(0, -0.18, 0.155)
 		label.modulate = Color.WHITE
 		label.outline_modulate = Color.BLACK
 		label.outline_size = 12
 		label.no_depth_test = false
 		label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-		player_node.add_child(label)
-		
+		label_parent.add_child(label)
+
 		var num_label_back = Label3D.new()
 		num_label_back.name = "JerseyNum_Back"
 		num_label_back.text = str(num)
 		num_label_back.font_size = 80
 		num_label_back.pixel_size = 0.004
-		num_label_back.position = Vector3(0, 0.85, -0.37) # Back is -Z
+		num_label_back.position = Vector3(0, -0.05, -0.155)
 		num_label_back.rotation.y = PI
 		num_label_back.modulate = Color.WHITE
 		num_label_back.outline_modulate = Color.BLACK
 		num_label_back.outline_size = 12
 		num_label_back.no_depth_test = false
 		num_label_back.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-		player_node.add_child(num_label_back)
-		
+		label_parent.add_child(num_label_back)
+
 	var p_name = player_node.player_name if "player_name" in player_node else "PLAYER"
 	var name_parts = p_name.split(" ")
 	var last_name = name_parts[name_parts.size() - 1].to_upper() if name_parts.size() > 0 else "PLAYER"
-	
+
 	var name_label = Label3D.new()
 	name_label.name = "JerseyName_Back"
 	name_label.text = last_name
 	name_label.font_size = 32
 	name_label.pixel_size = 0.004
-	name_label.position = Vector3(0, 1.05, -0.37) # Back is -Z
+	name_label.position = Vector3(0, 0.15, -0.155)
 	name_label.rotation.y = PI
 	name_label.modulate = Color.WHITE
 	name_label.outline_modulate = Color.BLACK
 	name_label.outline_size = 12
 	name_label.no_depth_test = false
 	name_label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	player_node.add_child(name_label)
-	
+	label_parent.add_child(name_label)
+
 	# Team Name Front
 	var team_idx = player_node.team_index if "team_index" in player_node else 0
 	var team_name_str = "TEAM"
@@ -330,28 +478,28 @@ func _add_jersey_labels(player_node: CharacterBody3D) -> void:
 		team_name_str = team_data_store[team_idx].name
 	else:
 		team_name_str = "BLUE" if team_idx == 0 else "RED"
-		
+
 	var team_label = Label3D.new()
 	team_label.name = "JerseyName_Front"
 	team_label.text = team_name_str.to_upper()
 	team_label.font_size = 32
 	team_label.pixel_size = 0.004
-	team_label.position = Vector3(0, 0.95, 0.37) # Front is +Z
+	team_label.position = Vector3(0, 0.05, 0.155)
 	team_label.modulate = Color.WHITE
 	team_label.outline_modulate = Color.BLACK
 	team_label.outline_size = 12
 	team_label.no_depth_test = false
 	team_label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	player_node.add_child(team_label)
-		
+	label_parent.add_child(team_label)
+
 	if "team_logo" in player_node and player_node.team_logo != null:
 		var decal = Decal.new()
 		decal.name = "JerseyLogo"
 		decal.texture_albedo = player_node.team_logo
-		decal.size = Vector3(0.5, 0.4, 0.5) # Projection width, depth, height
-		decal.position = Vector3(0, 0.85, 0.2) # Back side of the chest
-		decal.rotation.x = PI / 2.0 # Project local -Y toward global -Z (inwards)
-		player_node.add_child(decal)
+		decal.size = Vector3(0.5, 0.4, 0.5)
+		decal.position = Vector3(0, -0.05, 0.2)
+		decal.rotation.x = PI / 2.0
+		label_parent.add_child(decal)
 
 func _process(delta: float) -> void:
 	_apply_screen_shake(delta)
@@ -370,7 +518,7 @@ func record_stat(team_idx: int, roster_idx: int, stat_type: String, amount: int 
 		team_stats[roster_idx][stat_type] += amount
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel"):
+	if event.is_action_pressed("action_pause"):
 		# Toggle pause menu
 		if get_tree().paused:
 			# If there's already a pause menu, it handles its own input / resume
@@ -413,12 +561,20 @@ func _do_tip_off() -> void:
 		p.global_position = tip_off_positions_team0[i] + Vector3(0, 0.1, 0)
 		p.velocity = Vector3.ZERO
 		p.input_move = Vector2.ZERO
-	
+		# Team 0 spawns at -Z and attacks toward +Z
+		p.facing_direction = Vector3(0, 0, 1)
+		p.aim_direction = Vector3(0, 0, 1)
+		p.rotation.y = 0.0
+
 	for i in range(min(teams[1].size(), tip_off_positions_team1.size())):
 		var p = teams[1][i]
 		p.global_position = tip_off_positions_team1[i] + Vector3(0, 0.1, 0)
 		p.velocity = Vector3.ZERO
 		p.input_move = Vector2.ZERO
+		# Team 1 spawns at +Z and attacks toward -Z
+		p.facing_direction = Vector3(0, 0, -1)
+		p.aim_direction = Vector3(0, 0, -1)
+		p.rotation.y = PI
 	
 	if ball:
 		ball.force_position(Vector3(0, 1.0, 0))
@@ -631,24 +787,6 @@ func award_score(scoring_team: int, points: int, stop_game: bool = true) -> void
 				if "team_index" in passer and "roster_index" in passer and passer.team_index == shooter.team_index:
 					record_stat(passer.team_index, passer.roster_index, "assists", 1)
 		
-		# Bank pending points!
-		if "pending_free_points" in shooter and shooter.pending_free_points > 0:
-			var banked = shooter.pending_free_points
-			scores[scoring_team] += banked
-			record_stat(shooter.team_index, shooter.roster_index, "coins", banked) # Pending points count as coins collected effectively? Or just bonus?
-			shooter.pending_free_points = 0
-			
-			# Notify
-			var hud = get_tree().get_first_node_in_group("hud")
-			if shooter.is_human:
-				if hud and hud.has_method("show_gaudy_message"):
-					hud.show_gaudy_message("BANKED %d FREE POINTS!" % banked, 3.0)
-			else:
-				if shooter.has_method("show_floating_text"):
-					shooter.show_floating_text("BANKED %d!" % banked, Color.GOLD)
-					
-			# Re-emit score update with new total
-			score_changed.emit(scoring_team, scores[scoring_team])
 	
 	if not stop_game:
 		free_points[scoring_team] += points
@@ -699,41 +837,6 @@ func award_score(scoring_team: int, points: int, stop_game: bool = true) -> void
 #  COIN COMBO RESET
 # =========================================================
 
-func record_coin_pickup_combo(team_index: int, player: CharacterBody3D = null) -> void:
-	if team_index == _coin_combo_team:
-		_coin_combo_count += 1
-	else:
-		_coin_combo_count = 1
-		_coin_combo_team = team_index
-	_coin_combo_id += 1
-	var my_id = _coin_combo_id
-	
-	var team_name = "TEAM %d" % team_index
-	if team_data_store[team_index]:
-		team_name = team_data_store[team_index].name.to_upper()
-	var msg = "FREE POINTS - %s" % team_name
-	if _coin_combo_count > 1:
-		msg += " x %d" % _coin_combo_count
-		
-	if player and not player.is_human:
-		if player.has_method("show_floating_text"):
-			var float_color = Color.GOLD if team_index == 0 else Color(1.0, 0.8, 0.0)
-			player.show_floating_text("+1 POINT%s" % (" x%d" % _coin_combo_count if _coin_combo_count > 1 else ""), float_color)
-	else:
-		var hud = get_tree().get_first_node_in_group("hud")
-		if hud and hud.has_method("show_gaudy_message"):
-			var hud_color = Color.GOLD if team_index == 0 else Color(1.0, 0.8, 0.0)
-			hud.show_gaudy_message(msg, 2.0, "gold") # the hud uses strings for gaudy sometimes, or we can just pass msg
-	
-	# Auto-reset combo after window expires (only if no new coins picked up)
-	_start_combo_reset(my_id)
-
-func _start_combo_reset(combo_id: int) -> void:
-	await get_tree().create_timer(COIN_COMBO_WINDOW).timeout
-	# Only reset if no new coins have been picked up since this was started
-	if _coin_combo_id == combo_id:
-		_coin_combo_count = 0
-		_coin_combo_team = -1
 
 # =========================================================
 #  OUT-OF-BOUNDS / THROW-INS
@@ -742,14 +845,16 @@ func _start_combo_reset(combo_id: int) -> void:
 func _on_ball_out_of_bounds(last_touch_team: int, oob_position: Vector3) -> void:
 	if match_state != MatchState.PLAYING:
 		return
-	
+	# The Cage and similar courts disable out-of-bounds entirely
+	if no_out_of_bounds:
+		return
 	# Added this log to make sure nothing slipped through
 	print("[GameManager] OOB Triggered. Current state: ", match_state)
 	
 	match_state = MatchState.THROW_IN
 	_strip_ball_from_all()
-	_freeze_all_players(true)
-	
+	_lock_camera(true)   # hold the frame — players + ball keep moving during dead-ball
+
 	var receiving_team = 1 - last_touch_team if last_touch_team >= 0 else 0
 	
 	var team_name = "BLUE"
@@ -787,6 +892,8 @@ func _get_inbound_spot(oob_pos: Vector3) -> Vector3:
 func _do_sideline_inbound(inbound_team: int, court_spot: Vector3, oob_pos: Vector3) -> void:
 	## Inbound pass from near an out-of-bounds location.
 	## The inbounder stands just outside the boundary, teammates spread nearby.
+	_lock_camera(false)      # resume following now that setup is starting
+	_freeze_all_players(true)  # hold everyone in place while we position them
 	if ball:
 		ball._oob_disabled = true
 	
@@ -896,6 +1003,11 @@ func _do_sideline_inbound(inbound_team: int, court_spot: Vector3, oob_pos: Vecto
 #  SHARED HELPERS
 # =========================================================
 
+func _lock_camera(locked_val: bool) -> void:
+	var rig = get_tree().get_first_node_in_group("camera_rig")
+	if rig:
+		rig.locked = locked_val
+
 func _freeze_all_players(frozen_val: bool) -> void:
 	for team in teams:
 		for p in team:
@@ -904,6 +1016,9 @@ func _freeze_all_players(frozen_val: bool) -> void:
 			if frozen_val:
 				p.velocity = Vector3.ZERO
 				p.input_move = Vector2.ZERO
+				# Ensure visual and animation state is cleared during transitions
+				if p.has_method("force_reset_state"):
+					p.force_reset_state()
 			else:
 				# When unfreezing, make sure no one is stuck
 				if "current_state" in p and p.current_state in [p.State.CELEBRATING, p.State.SHOOTING, p.State.PASSING]:
@@ -968,10 +1083,16 @@ func _strip_ball_from_all() -> void:
 	for team in teams:
 		for p in team:
 			if "has_ball" in p and p.has_ball:
-				p.has_ball = false
-				p.held_ball = null
+				if p.has_method("_release_ball"):
+					p._release_ball()
+				else:
+					p.has_ball = false
+					p.held_ball = null
 	if ball:
-		ball.holder = null
+		if ball.has_method("force_release"):
+			ball.force_release()
+		else:
+			ball.holder = null
 
 func is_three_pointer(shoot_position: Vector3, target_hoop_index: int) -> bool:
 	var hoop_pos = hoop_positions[target_hoop_index]

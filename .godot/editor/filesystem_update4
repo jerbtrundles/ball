@@ -1,1 +1,17 @@
 res://scenes/characters/player.gd
+res://scripts/player_controller.gd
+res://scripts/game_manager.gd
+res://ui/main_menu.gd
+res://ui/season_hub.gd
+res://ui/season_setup.gd
+res://ui/survival_hub.gd
+res://ui/survival_setup.gd
+res://ui/tournament_hub.gd
+res://ui/tournament_setup.gd
+res://scripts/managers/scene_manager.gd
+res://ui/save_picker_modal.gd
+res://ui/settings_modal.gd
+res://scripts/managers/settings_manager.gd
+res://ui/quick_match_setup.gd
+res://ui/hud.gd
+res://ui/loading_screen.gd

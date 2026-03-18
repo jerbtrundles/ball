@@ -10,6 +10,7 @@ extends CanvasLayer
 @onready var team1_name_label: Label = $MarginContainer/TopBar/Team1Name
 
 var game_manager: Node = null
+var _last_winner_team: int = -1
 
 # Active gaudy message tweens (so we can kill them on re-trigger)
 var _gaudy_scale_tween: Tween = null
@@ -56,10 +57,16 @@ func _update_team_info(t0: Resource, t1: Resource) -> void:
 		team1_score_label.add_theme_color_override("font_color", t1.color_primary)
 
 func _on_score_changed(team_index: int, new_score: int) -> void:
-	if team_index == 0 and team0_score_label:
-		team0_score_label.text = str(new_score)
-	elif team_index == 1 and team1_score_label:
-		team1_score_label.text = str(new_score)
+	var label: Label = team0_score_label if team_index == 0 else team1_score_label
+	if label == null:
+		return
+	label.text = str(new_score)
+	# Pop animation on actual scores (not on initialization)
+	if new_score > 0:
+		label.pivot_offset = label.size / 2.0
+		var tween = create_tween()
+		tween.tween_property(label, "scale", Vector2(1.65, 1.65), 0.07).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+		tween.tween_property(label, "scale", Vector2(1.0, 1.0), 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 
 func _on_clock_changed(time_remaining: float) -> void:
 	if clock_label == null:
@@ -73,6 +80,7 @@ func _on_quarter_changed(quarter: int) -> void:
 		quarter_label.text = "Q%d" % quarter
 
 func _on_game_over(winner_team: int) -> void:
+	_last_winner_team = winner_team
 	if message_label:
 		message_label.visible = true
 		if winner_team == -1:
@@ -88,7 +96,7 @@ func _on_game_over(winner_team: int) -> void:
 					team_color = t_data.color_primary
 			
 			var verb = "WIN" if team_name.to_upper().ends_with("S") else "WINS"
-			message_label.text = "%s %s!\nPRESS ANY TO CONTINUE" % [team_name.to_upper(), verb]
+			message_label.text = "%s %s!\nPRESS ANY BUTTON TO CONTINUE" % [team_name.to_upper(), verb]
 			message_label.modulate = team_color
 
 func _input(event: InputEvent) -> void:
@@ -96,8 +104,23 @@ func _input(event: InputEvent) -> void:
 		if event.is_action_pressed("ui_accept") or (event is InputEventMouseButton and event.pressed) or event.is_action_pressed("ui_cancel"):
 			if "is_season_game" in game_manager and game_manager.is_season_game:
 				get_tree().change_scene_to_file("res://ui/post_game_progression.tscn")
+			elif "is_tournament_game" in game_manager and game_manager.is_tournament_game:
+				_handle_tournament_end()
+			elif "is_survival_game" in game_manager and game_manager.is_survival_game:
+				_handle_survival_end()
 			else:
 				get_tree().change_scene_to_file("res://ui/main_menu.tscn")
+
+func _handle_tournament_end() -> void:
+	# Player's team is always index 0; winner_team == 0 means player won
+	var player_won = (_last_winner_team == 0)
+	LeagueManager.record_tournament_match_result(player_won)
+	get_tree().change_scene_to_file("res://ui/tournament_hub.tscn")
+
+func _handle_survival_end() -> void:
+	var player_won = (_last_winner_team == 0)
+	LeagueManager.record_survival_result(player_won)
+	get_tree().change_scene_to_file("res://ui/survival_hub.tscn")
 
 func show_message(text: String, duration: float = 2.0, color: Color = Color.WHITE) -> void:
 	if message_label:
@@ -132,7 +155,11 @@ func show_gaudy_message(text: String, duration: float = 2.0, theme: String = "ra
 	message_label.text = text
 	message_label.visible = true
 	message_label.scale = Vector2.ONE
-	message_label.rotation = 0
+	
+	# Initial "pop" rotation for extra gaudiness
+	message_label.rotation = deg_to_rad(randf_range(-15.0, 15.0))
+	var pop_rot_tween = create_tween()
+	pop_rot_tween.tween_property(message_label, "rotation", 0, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	
 	# GAUDY EFFECT — colors + scale pulse + wobble based on theme
 	
@@ -168,8 +195,8 @@ func show_gaudy_message(text: String, duration: float = 2.0, theme: String = "ra
 		_gaudy_color_tween.tween_property(message_label, "modulate", Color.WHITE, 0.2)
 		_gaudy_color_tween.tween_property(message_label, "modulate", Color.YELLOW, 0.2)
 		
-		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(2.0), 0.15)
-		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(-2.0), 0.15)
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(8.0), 0.15)
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(-8.0), 0.15)
 	elif theme == "green":
 		# Fast, energetic green speed boost
 		_gaudy_scale_tween.tween_property(message_label, "scale", Vector2(1.5, 1.5), 0.15).set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
@@ -204,8 +231,8 @@ func show_gaudy_message(text: String, duration: float = 2.0, theme: String = "ra
 		_gaudy_color_tween.tween_property(message_label, "modulate", Color.WHITE, 0.25)
 		_gaudy_color_tween.tween_property(message_label, "modulate", Color.ORANGE, 0.25)
 		
-		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(2.0), 0.2)
-		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(-2.0), 0.2)
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(10.0), 0.2)
+		_gaudy_rot_tween.tween_property(message_label, "rotation", deg_to_rad(-10.0), 0.2)
 	
 	await get_tree().create_timer(duration).timeout
 	

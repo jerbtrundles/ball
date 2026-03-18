@@ -24,10 +24,9 @@ signal call_for_pass(requester: CharacterBody3D)  # Fired when player wants a te
 @export var strength: float = 1.0  # How fast they recover from tackles
 @export var jump_force: float = 10.0
 
-var pending_free_points: int = 0
 
 # --- State ---
-enum State { IDLE, RUNNING, SPRINTING, SHOOTING, PASSING, TACKLING, KNOCKED_DOWN, CELEBRATING }
+enum State { IDLE, RUNNING, SPRINTING, SHOOTING, PASSING, TACKLING, PUNCHING, KNOCKED_DOWN, CELEBRATING }
 var current_state: State = State.IDLE
 var has_ball: bool = false
 var facing_direction: Vector3 = Vector3.FORWARD
@@ -36,6 +35,9 @@ var knockdown_timer: float = 0.0
 var knockdown_duration: float = 2.0
 var tackle_cooldown: float = 0.0
 var tackle_cooldown_duration: float = 1.0
+var punch_cooldown: float = 0.0
+var punch_cooldown_duration: float = 0.65
+var punch_range: float = 1.8
 var frozen: bool = false  # When true, player can't move or act (tip-off intro)
 var celebrate_timer: float = 0.0
 
@@ -54,10 +56,9 @@ var input_sprint: bool = false
 var input_pass: bool = false
 var input_shoot: bool = false
 var input_tackle: bool = false
+var input_punch: bool = false
 var input_call_pass: bool = false  # Press pass when you don't have the ball
 var input_jump: bool = false
-var input_kiss: bool = false
-var kiss_cooldown: float = 0.0
 var pickup_cooldown: float = 0.0
 
 # --- References ---
@@ -86,14 +87,27 @@ func _ready() -> void:
 		move_speed = 10.0
 		sprint_speed = 15.0
 		shot_power = 14.0
+	
+	# Tackle Impact Audio
+	_hit_sound_player = AudioStreamPlayer3D.new()
+	_hit_sound_player.stream = load("res://assets/sounds/hitHurt.wav")
+	_hit_sound_player.bus = "SFX"
+	add_child(_hit_sound_player)
 
 @export var jersey_number: int = 0  # Set by game_manager during team setup
+@export var body_height: float = 1.0   # Scale multiplier — 0.82 short … 1.18 tall
+@export var body_build: float  = 1.0   # Scale multiplier — 0.85 lean  … 1.18 heavy
+@export var skin_tone: Color   = Color(0.85, 0.65, 0.45)
+@export var shot_skill: float  = 50.0  # 0-99, used in CPU shot-accuracy formula
 var team_logo: Texture2D = null
 
 # Arm pivot references (for animation)
 var _left_arm_pivot: Node3D = null
 var _right_arm_pivot: Node3D = null
+var _left_elbow: Node3D = null
+var _right_elbow: Node3D = null
 var _arm_tween: Tween = null
+var _model_tween: Tween = null
 var custom_team_color: Color = Color(0, 0, 0, 0) # If alpha > 0, overrides team_index color
 
 var _buff_indicator_mesh: MeshInstance3D = null
@@ -107,37 +121,33 @@ var _leg_pivot_l: Node3D = null
 var _leg_pivot_r: Node3D = null
 var _foot_l: MeshInstance3D = null
 var _foot_r: MeshInstance3D = null
-var _jersey_label_front: Label3D = null
-var _jersey_label_back: Label3D = null
 
 var _anim_time: float = 0.0
 var _dribble_time: float = 0.0
+var _hit_sound_player: AudioStreamPlayer3D = null
 
 func _setup_visuals() -> void:
-	# Hide the default capsule mesh if it exists
 	if mesh:
 		mesh.visible = false
-	
-	# Root for all model parts
+
 	_model_root = Node3D.new()
 	_model_root.name = "ModelRoot"
 	add_child(_model_root)
-	
+
 	var color = team_colors[team_index] if team_index < team_colors.size() else Color.WHITE
 	if custom_team_color.a > 0.0:
 		color = custom_team_color
-	
+
 	team_color_material.albedo_color = color
 	team_color_material.emission_enabled = true
 	team_color_material.emission = color * 0.3
 	team_color_material.metallic = 0.4
 	team_color_material.roughness = 0.6
-	
-	# Skin-tone material for head and limbs
+
 	var skin_mat = StandardMaterial3D.new()
-	skin_mat.albedo_color = Color(0.85, 0.65, 0.45)
+	skin_mat.albedo_color = skin_tone
 	skin_mat.roughness = 0.8
-	
+
 	# --- Torso ---
 	_torso = MeshInstance3D.new()
 	_torso.name = "Torso"
@@ -147,112 +157,210 @@ func _setup_visuals() -> void:
 	_torso.material_override = team_color_material
 	_torso.position = Vector3(0, 0.9, 0)
 	_model_root.add_child(_torso)
-	
-	# --- Head ---
+
+	# --- Shorts (darker team color, hangs below jersey) ---
+	var shorts = MeshInstance3D.new()
+	shorts.name = "Shorts"
+	var shorts_mesh = BoxMesh.new()
+	shorts_mesh.size = Vector3(0.54, 0.26, 0.32)
+	shorts.mesh = shorts_mesh
+	var shorts_mat = StandardMaterial3D.new()
+	shorts_mat.albedo_color = color.darkened(0.35)
+	shorts_mat.roughness = 0.8
+	shorts.material_override = shorts_mat
+	shorts.position = Vector3(0, -0.38, 0)
+	_torso.add_child(shorts)
+
+	# --- Neck ---
+	var neck = MeshInstance3D.new()
+	neck.name = "Neck"
+	var neck_mesh = CylinderMesh.new()
+	neck_mesh.top_radius = 0.07
+	neck_mesh.bottom_radius = 0.08
+	neck_mesh.height = 0.10
+	neck.mesh = neck_mesh
+	neck.material_override = skin_mat
+	neck.position = Vector3(0, 0.40, 0)
+	_torso.add_child(neck)
+
+	# --- Head (sphere) ---
 	_head = MeshInstance3D.new()
 	_head.name = "Head"
-	var head_mesh = BoxMesh.new()
-	head_mesh.size = Vector3(0.35, 0.35, 0.35)
+	var head_mesh = SphereMesh.new()
+	head_mesh.radius = 0.19
+	head_mesh.height = 0.38
 	_head.mesh = head_mesh
 	_head.material_override = skin_mat
-	_head.position = Vector3(0, 0.55, 0) # Relative to torso center
+	_head.position = Vector3(0, 0.64, 0)
 	_torso.add_child(_head)
-	
-	# --- Jersey Numbers ---
-	_jersey_label_front = Label3D.new()
-	_jersey_label_front.name = "JerseyNumber_Front"
-	_jersey_label_front.text = str(jersey_number)
-	_jersey_label_front.font_size = 48
-	_jersey_label_front.outline_size = 12
-	_jersey_label_front.position = Vector3(0, 0, -0.16)
-	_jersey_label_front.rotation_degrees = Vector3(0, 180, 0)
-	_torso.add_child(_jersey_label_front)
-	
-	_jersey_label_back = Label3D.new()
-	_jersey_label_back.name = "JerseyNumber_Back"
-	_jersey_label_back.text = str(jersey_number)
-	_jersey_label_back.font_size = 64
-	_jersey_label_back.outline_size = 16
-	_jersey_label_back.position = Vector3(0, 0, 0.16)
-	_torso.add_child(_jersey_label_back)
-	
-	# --- Accent color for visor and details ---
+
+	# --- Accent color for visor ---
 	var accent_color = Color(0.0, 1.0, 1.0) if team_index == 0 else Color(1.0, 1.0, 0.0)
 	var accent_mat = StandardMaterial3D.new()
 	accent_mat.albedo_color = accent_color
 	accent_mat.emission_enabled = true
 	accent_mat.emission = accent_color
 	accent_mat.emission_energy_multiplier = 3.0
-	
-	# Add visor to head
+
 	var visor = MeshInstance3D.new()
 	visor.name = "Visor"
 	var visor_mesh = BoxMesh.new()
-	visor_mesh.size = Vector3(0.25, 0.08, 0.05)
+	visor_mesh.size = Vector3(0.28, 0.07, 0.05)
 	visor.mesh = visor_mesh
 	visor.material_override = accent_mat
-	visor.position = Vector3(0, 0.05, -0.17)
+	visor.position = Vector3(0, 0.04, -0.19)
 	_head.add_child(visor)
-	
-	# --- Arms ---
+
+	# --- Jersey side stripes ---
+	var stripe_mat = StandardMaterial3D.new()
+	stripe_mat.albedo_color = color.lightened(0.38)
+	stripe_mat.roughness = 0.65
+	stripe_mat.metallic = 0.2
+	for side in [-1, 1]:
+		var sf = MeshInstance3D.new()
+		sf.name = "Stripe_Front_%d" % (side + 2)
+		var sfm = BoxMesh.new()
+		sfm.size = Vector3(0.055, 0.72, 0.013)
+		sf.mesh = sfm
+		sf.material_override = stripe_mat
+		sf.position = Vector3(side * 0.195, 0, 0.158)
+		_torso.add_child(sf)
+		var sb = MeshInstance3D.new()
+		sb.name = "Stripe_Back_%d" % (side + 2)
+		var sbm = BoxMesh.new()
+		sbm.size = Vector3(0.055, 0.72, 0.013)
+		sb.mesh = sbm
+		sb.material_override = stripe_mat
+		sb.position = Vector3(side * 0.195, 0, -0.158)
+		_torso.add_child(sb)
+		var ss = MeshInstance3D.new()
+		ss.name = "Stripe_Side_%d" % (side + 2)
+		var ssm = BoxMesh.new()
+		ssm.size = Vector3(0.013, 0.72, 0.304)
+		ss.mesh = ssm
+		ss.material_override = stripe_mat
+		ss.position = Vector3(side * 0.258, 0, 0)
+		_torso.add_child(ss)
+
+	# --- Arms (two segments with elbow joint) ---
 	for side in [-1, 1]:
 		var arm_pivot = Node3D.new()
 		arm_pivot.name = "ArmPivot_L" if side == -1 else "ArmPivot_R"
-		arm_pivot.position = Vector3(side * 0.3, 0.25, 0) # Shoulder joint relative to torso
+		arm_pivot.position = Vector3(side * 0.30, 0.25, 0)
 		_torso.add_child(arm_pivot)
-		
+
 		if side == -1: _left_arm_pivot = arm_pivot
 		else: _right_arm_pivot = arm_pivot
-		
-		var arm_mesh = MeshInstance3D.new()
-		var am = CylinderMesh.new()
-		am.top_radius = 0.07
-		am.bottom_radius = 0.05
-		am.height = 0.6
-		arm_mesh.mesh = am
-		arm_mesh.material_override = skin_mat
-		arm_mesh.position = Vector3(0, -0.3, 0)
-		arm_pivot.add_child(arm_mesh)
-		
+
+		# Shoulder cap sphere at the pivot point
+		var shoulder_cap = MeshInstance3D.new()
+		shoulder_cap.name = "ShoulderCap"
+		var scm = SphereMesh.new()
+		scm.radius = 0.09
+		scm.height = 0.18
+		shoulder_cap.mesh = scm
+		shoulder_cap.material_override = team_color_material
+		arm_pivot.add_child(shoulder_cap)
+
+		# Upper arm
+		var upper_arm = MeshInstance3D.new()
+		upper_arm.name = "UpperArm"
+		var uam = CylinderMesh.new()
+		uam.top_radius = 0.07
+		uam.bottom_radius = 0.06
+		uam.height = 0.30
+		upper_arm.mesh = uam
+		upper_arm.material_override = skin_mat
+		upper_arm.position = Vector3(0, -0.15, 0)
+		arm_pivot.add_child(upper_arm)
+
+		# Elbow pivot at the bottom of the upper arm — slight natural bend at rest
+		var elbow_pivot = Node3D.new()
+		elbow_pivot.name = "ElbowPivot"
+		elbow_pivot.position = Vector3(0, -0.30, 0)
+		elbow_pivot.rotation.x = 0.15
+		arm_pivot.add_child(elbow_pivot)
+
+		if side == -1: _left_elbow = elbow_pivot
+		else: _right_elbow = elbow_pivot
+
+		# Forearm
+		var forearm = MeshInstance3D.new()
+		forearm.name = "Forearm"
+		var fam = CylinderMesh.new()
+		fam.top_radius = 0.06
+		fam.bottom_radius = 0.05
+		fam.height = 0.28
+		forearm.mesh = fam
+		forearm.material_override = skin_mat
+		forearm.position = Vector3(0, -0.14, 0)
+		elbow_pivot.add_child(forearm)
+
+		# Hand
 		var hand = MeshInstance3D.new()
 		var hm = SphereMesh.new()
 		hm.radius = 0.06
 		hm.height = 0.12
 		hand.mesh = hm
 		hand.material_override = skin_mat
-		hand.position = Vector3(0, -0.32, 0) # End of arm_mesh
-		arm_mesh.add_child(hand)
-	
-	# --- Legs ---
+		hand.position = Vector3(0, -0.14, 0)
+		forearm.add_child(hand)
+
+	# --- Legs (two segments with knee joint) ---
 	for side in [-1, 1]:
 		var leg_pivot = Node3D.new()
 		leg_pivot.name = "LegPivot_L" if side == -1 else "LegPivot_R"
-		leg_pivot.position = Vector3(side * 0.15, -0.35, 0) # Hip joint relative to torso
+		leg_pivot.position = Vector3(side * 0.15, -0.35, 0)
 		_torso.add_child(leg_pivot)
-		
+
 		if side == -1: _leg_pivot_l = leg_pivot
 		else: _leg_pivot_r = leg_pivot
-		
-		var leg_mesh = MeshInstance3D.new()
-		var lm = CylinderMesh.new()
-		lm.top_radius = 0.1
-		lm.bottom_radius = 0.07
-		lm.height = 0.6
-		leg_mesh.mesh = lm
-		leg_mesh.material_override = skin_mat
-		leg_mesh.position = Vector3(0, -0.3, 0)
-		leg_pivot.add_child(leg_mesh)
-		
+
+		# Thigh
+		var thigh = MeshInstance3D.new()
+		thigh.name = "Thigh"
+		var thm = CylinderMesh.new()
+		thm.top_radius = 0.10
+		thm.bottom_radius = 0.08
+		thm.height = 0.30
+		thigh.mesh = thm
+		thigh.material_override = skin_mat
+		thigh.position = Vector3(0, -0.15, 0)
+		leg_pivot.add_child(thigh)
+
+		# Knee pivot at the bottom of the thigh
+		var knee_pivot = Node3D.new()
+		knee_pivot.name = "KneePivot"
+		knee_pivot.position = Vector3(0, -0.30, 0)
+		leg_pivot.add_child(knee_pivot)
+
+		# Shin
+		var shin = MeshInstance3D.new()
+		shin.name = "Shin"
+		var shm = CylinderMesh.new()
+		shm.top_radius = 0.08
+		shm.bottom_radius = 0.06
+		shm.height = 0.30
+		shin.mesh = shm
+		shin.material_override = skin_mat
+		shin.position = Vector3(0, -0.15, 0)
+		knee_pivot.add_child(shin)
+
+		# Sneaker
 		var foot = MeshInstance3D.new()
+		foot.name = "Foot"
 		var fm = BoxMesh.new()
 		fm.size = Vector3(0.12, 0.08, 0.22)
 		foot.mesh = fm
 		var foot_mat = StandardMaterial3D.new()
-		foot_mat.albedo_color = Color(0.1, 0.1, 0.1) # Black sneakers
+		foot_mat.albedo_color = Color(0.1, 0.1, 0.1)
 		foot.material_override = foot_mat
-		foot.position = Vector3(0, -0.3, -0.05) # Relative to leg_mesh center
-		leg_mesh.add_child(foot)
-	
+		foot.position = Vector3(0, -0.15, -0.05)
+		shin.add_child(foot)
+
+	# Body scale (height × build) applied to the whole model root
+	_model_root.scale = Vector3(body_build, body_height, body_build)
+
 	# --- Human player ring indicator ---
 	if is_human:
 		var ring = MeshInstance3D.new()
@@ -322,6 +430,43 @@ func _play_pass_animation() -> void:
 	_arm_tween.tween_property(_left_arm_pivot, "rotation:x", 0.0, 0.2)
 	_arm_tween.tween_property(_right_arm_pivot, "rotation:x", 0.0, 0.2)
 
+func _play_punch_animation() -> void:
+	## Phase 1 — Wind-up: upper arm pulls back and up, elbow bends sharply (fist near ear).
+	## Phase 2 — Pitch: arm whips forward, elbow extends through on contact.
+	## Phase 3 — Return to rest.
+	if _arm_tween:
+		_arm_tween.kill()
+	_arm_tween = create_tween()
+
+	# Wind-up (0.15s): arm pulls back and up, elbow flares, left arm rises as guard
+	_arm_tween.set_parallel(true)
+	_arm_tween.tween_property(_right_arm_pivot, "rotation:x", -2.0, 0.15)  # back and up
+	_arm_tween.tween_property(_right_arm_pivot, "rotation:z", -0.3, 0.15)  # elbow flares out
+	if _right_elbow:
+		_arm_tween.tween_property(_right_elbow, "rotation:x", 0.9, 0.15)   # fist folds toward head
+	_arm_tween.tween_property(_left_arm_pivot, "rotation:x", 0.3, 0.15)   # guard: arm slightly forward
+	_arm_tween.set_parallel(false)
+
+	# Pitch (0.09s): arm whips hard forward, elbow snaps through to full extension
+	_arm_tween.set_parallel(true)
+	_arm_tween.tween_property(_right_arm_pivot, "rotation:x", 2.2, 0.09)   # forward
+	_arm_tween.tween_property(_right_arm_pivot, "rotation:z", 0.0, 0.09)
+	if _right_elbow:
+		_arm_tween.tween_property(_right_elbow, "rotation:x", -0.1, 0.09)  # full extension
+	_arm_tween.tween_property(_left_arm_pivot, "rotation:x", -0.4, 0.09)  # pull back as counterweight
+	_arm_tween.set_parallel(false)
+
+	# Hold at full extension briefly
+	_arm_tween.tween_interval(0.05)
+
+	# Return (0.22s)
+	_arm_tween.set_parallel(true)
+	_arm_tween.tween_property(_right_arm_pivot, "rotation:x", 0.0, 0.22)
+	_arm_tween.tween_property(_right_arm_pivot, "rotation:z", 0.0, 0.22)
+	if _right_elbow:
+		_arm_tween.tween_property(_right_elbow, "rotation:x", 0.15, 0.22)
+	_arm_tween.tween_property(_left_arm_pivot, "rotation:x", 0.0, 0.22)
+
 func _physics_process(delta: float) -> void:
 	# Frozen — no movement or actions
 	if frozen:
@@ -332,10 +477,9 @@ func _physics_process(delta: float) -> void:
 	# Timers
 	if tackle_cooldown > 0:
 		tackle_cooldown -= delta
+	if punch_cooldown > 0:
+		punch_cooldown -= delta
 	
-	if kiss_cooldown > 0:
-		kiss_cooldown -= delta
-		
 	if pickup_cooldown > 0:
 		pickup_cooldown -= delta
 		
@@ -363,6 +507,8 @@ func _physics_process(delta: float) -> void:
 		State.IDLE, State.RUNNING, State.SPRINTING:
 			_process_movement(delta)
 			_process_actions()
+		State.PUNCHING:
+			_process_movement(delta)  # Can still move while punching
 		State.TACKLING:
 			_process_tackle(delta)
 		State.KNOCKED_DOWN:
@@ -413,12 +559,18 @@ func _physics_process(delta: float) -> void:
 		var right_vec = facing_direction.cross(Vector3.UP).normalized()
 		var ball_offset = facing_direction * dribble_fwd + Vector3(0, dribble_y, 0) + right_vec * (dribble_side + side_swing)
 		
-		held_ball.global_position = global_position + ball_offset
-		held_ball.linear_velocity = Vector3.ZERO
-		held_ball.angular_velocity = Vector3.ZERO
-		
-		# Rotate ball slightly as if dribbling
-		held_ball.rotation.x += delta * 15.0
+		# Safety check: Ghost possession
+		# If the player thinks they have the ball, but the ball thinks someone else has it,
+		# or the reference is gone, clear local state immediately.
+		if not is_instance_valid(held_ball) or held_ball.holder != self:
+			_clear_possession_state()
+		else:
+			held_ball.global_position = global_position + ball_offset
+			held_ball.linear_velocity = Vector3.ZERO
+			held_ball.angular_velocity = Vector3.ZERO
+			
+			# Rotate ball slightly as if dribbling
+			held_ball.rotation.x += delta * 15.0
 	
 	# --- Floor safety: prevent falling through the court ---
 	if global_position.y < -1.0:
@@ -429,6 +581,14 @@ func _update_animations(delta: float) -> void:
 	if not _model_root: return
 	
 	_anim_time += delta
+	
+	# Skip procedural animations during dive/knockdown
+	if current_state in [State.TACKLING, State.KNOCKED_DOWN]:
+		# Still allow arm follow if we have the ball (though we shouldn't during tackle)
+		if has_ball:
+			_dribble_time += delta
+			_right_arm_pivot.rotation.x = 0.5
+		return
 	
 	var horizontal_vel = Vector3(velocity.x, 0, velocity.z).length()
 	var is_moving = horizontal_vel > 0.5
@@ -444,20 +604,21 @@ func _update_animations(delta: float) -> void:
 		var speed_mult = clampf(horizontal_vel * 1.5, 5.0, 15.0)
 		var cycle = _anim_time * speed_mult
 		
-		# Leg swing
-		var leg_swing = sin(cycle) * 0.6
-		_leg_pivot_l.rotation.x = leg_swing
-		_leg_pivot_r.rotation.x = -leg_swing
-		
+		# Leg swing — cap backward swing so the upper leg doesn't hump upward
+		# and obscure the jersey number on the back of the torso
+		var leg_raw = sin(cycle) * 0.45
+		_leg_pivot_l.rotation.x = clamp(leg_raw, -0.35, 0.45)
+		_leg_pivot_r.rotation.x = clamp(-leg_raw, -0.35, 0.45)
+
 		# Torso bob & lean
 		_torso.position.y = 0.9 + abs(sin(cycle * 2.0)) * 0.08
 		_torso.rotation.z = -sin(cycle) * 0.05 # Side to side lean
-		_torso.rotation.x = 0.2 # Lean forward
+		_torso.rotation.x = 0.12 # Lean forward (reduced to keep jersey visible)
 		
 		# Arms swing in opposition to legs (if not shooting/passing)
 		if current_state in [State.RUNNING, State.SPRINTING, State.IDLE]:
-			_left_arm_pivot.rotation.x = -leg_swing * 0.8
-			_right_arm_pivot.rotation.x = leg_swing * 0.8
+			_left_arm_pivot.rotation.x = -leg_raw * 0.8
+			_right_arm_pivot.rotation.x = leg_raw * 0.8
 	else:
 		# Idle breathing bob
 		var idle_cycle = _anim_time * 2.5
@@ -551,6 +712,9 @@ func _process_actions() -> void:
 	elif input_tackle and not has_ball and tackle_cooldown <= 0:
 		do_tackle()
 		input_tackle = false
+	elif input_punch and punch_cooldown <= 0:
+		do_punch()
+		input_punch = false
 	
 	# Clear stale buffered inputs that couldn't be consumed
 	# (e.g. pressed shoot but lost the ball before it fired)
@@ -560,12 +724,9 @@ func _process_actions() -> void:
 	if has_ball:
 		input_tackle = false
 		input_call_pass = false
-		input_kiss = false # Cannot kiss while holding ball? Maybe you can.
+	# punch is always clearable — allowed with or without ball
 	
-	if input_kiss and kiss_cooldown <= 0:
-		do_kiss()
-		input_kiss = false
-
+	
 func do_shoot() -> void:
 	if not has_ball or held_ball == null:
 		return
@@ -717,10 +878,12 @@ func _calculate_shot_percentage(hoop_pos: Vector3) -> float:
 				pressure_penalty += 20.0
 			elif p_dist < 4.0:
 				pressure_penalty += 10.0
-	
-	var final_pct = max(base_pct - pressure_penalty, 5.0)
-	print("[Shot] %s | Dist: %.1f | Base: %.0f%% | Pressure: -%.0f%% | Final: %.0f%%" % [
-		"HUMAN" if is_human else "CPU", dist, base_pct, pressure_penalty, final_pct])
+
+	# Shot skill modifier: ±15% swing across the 10-99 stat range
+	# A 99-shot player gains ~+14.8%, a 10-shot player loses ~-12%
+	var shot_modifier: float = (shot_skill - 50.0) * 0.30
+
+	var final_pct = maxf(base_pct + shot_modifier - pressure_penalty, 5.0)
 	return final_pct
 
 func _calc_launch_velocity(from: Vector3, to: Vector3, dist: float) -> Vector3:
@@ -755,7 +918,7 @@ func do_pass() -> void:
 		pass_dir = to_mate.normalized()
 	else:
 		# No teammate found — just throw in aim direction
-		if aim_direction.length() > 0.1:
+		if input_aim.length() > 0.1:
 			pass_dir = aim_direction.normalized()
 		else:
 			pass_dir = facing_direction.normalized()
@@ -810,8 +973,8 @@ func pass_to_player(target: CharacterBody3D) -> void:
 		# Zero residual velocity before applying pass impulse
 		b.linear_velocity = Vector3.ZERO
 		b.angular_velocity = Vector3.ZERO
-		# Prevent immediate OOB re-trigger when passing from out of bounds
-		b._oob_cooldown = 3.0
+		# Short grace so the ball doesn't trigger OOB at the exact release point
+		b._oob_cooldown = 0.4
 		# Scale power: at least pass_power, more for longer distances
 		var power = max(pass_power, pass_dist * 3.0)
 		b.apply_impulse(pass_dir * power)
@@ -831,7 +994,7 @@ func _find_pass_target() -> CharacterBody3D:
 		return null
 	
 	# If we have aim input, pick the teammate closest to the aim direction
-	var use_aim = aim_direction.length() > 0.1
+	var use_aim = input_aim.length() > 0.1
 	var best_mate: CharacterBody3D = null
 	var best_score: float = -1.0
 	
@@ -862,9 +1025,36 @@ func _find_pass_target() -> CharacterBody3D:
 func do_tackle() -> void:
 	current_state = State.TACKLING
 	tackle_cooldown = tackle_cooldown_duration
-	# Lunge forward
-	var lunge_dir = aim_direction if aim_direction.length() > 0.1 else facing_direction
-	velocity = lunge_dir * tackle_force
+	# Lunge forward with a faster, horizontal thrust
+	var lunge_dir = aim_direction if input_aim.length() > 0.1 else facing_direction
+	velocity = lunge_dir * (tackle_force * 1.4) 
+	
+	# FORCE horizontal-only if on floor to prevent any "jump" from previous states
+	if is_on_floor():
+		velocity.y = 0
+	
+	# Explicitly call move_and_slide once to ensure the movement starts immediately
+	move_and_slide()
+	
+	# Visual: Tilt model forward and push arms
+	if _model_root:
+		if _arm_tween: _arm_tween.kill()
+		if _model_tween: _model_tween.kill()
+		_model_tween = create_tween()
+		_model_tween.set_parallel(true)
+		# Tilt torso forward
+		_model_tween.tween_property(_model_root, "rotation:x", 0.6, 0.15)
+		# Rapid arm push!
+		_model_tween.tween_property(_left_arm_pivot, "rotation:x", -1.8, 0.1)
+		_model_tween.tween_property(_right_arm_pivot, "rotation:x", -1.8, 0.1)
+		
+		# Recover
+		_model_tween.set_parallel(false)
+		_model_tween.tween_interval(0.15)
+		_model_tween.set_parallel(true)
+		_model_tween.tween_property(_model_root, "rotation:x", 0.0, 0.2)
+		_model_tween.tween_property(_left_arm_pivot, "rotation:x", 0.0, 0.2)
+		_model_tween.tween_property(_right_arm_pivot, "rotation:x", 0.0, 0.2)
 	
 	# Check for hits
 	if tackle_area:
@@ -873,45 +1063,43 @@ func do_tackle() -> void:
 				if "team_index" in body and body.team_index != team_index:
 					_hit_player(body)
 
-func do_kiss() -> void:
-	# Find closest player
-	var closest: CharacterBody3D = null
-	var min_dist: float = 2.5 # Max kiss range
-	
-	for p in get_tree().get_nodes_in_group("players"):
-		if p == self: continue
-		var d = global_position.distance_to(p.global_position)
-		if d < min_dist:
-			min_dist = d
-			closest = p
-	
-	if closest:
-		# SMOOCH!
-		kiss_cooldown = 15.0 # Once per quarter implies long cooldown, let's say 15s or 30s. Or check quarter logic?
-		# User said "once per quarter". I'll just use a long cooldown for now.
-		kiss_cooldown = 60.0 
-		
-		# Visuals: Rotate to face
-		var dir = (closest.global_position - global_position).normalized()
-		rotation.y = atan2(dir.x, dir.z)
-		
-		# Heart Particles?
-		# We can spawn a simple label or particle if we had one.
-		# For now, just the gaudy message.
-		var p_name = closest.player_name if "player_name" in closest else "Player"
-		if is_human or closest.is_human:
-			var hud = get_tree().get_first_node_in_group("hud")
-			if hud and hud.has_method("show_gaudy_message"):
-				var msg = "SMOOCH! %s + %s" % [player_name, p_name]
-				hud.show_gaudy_message(msg, 3.0)
-		else:
-			show_floating_text("SMOOCH!", Color(1.0, 0.4, 0.6))
-			if closest.has_method("show_floating_text"):
-				closest.show_floating_text("SMOOCH!", Color(1.0, 0.4, 0.6))
-		
-		# Maybe heal them or something?
-		# For now purely cosmetic as requested.
-		print("Kissed %s!" % closest.name)
+func do_punch() -> void:
+	current_state = State.PUNCHING
+	punch_cooldown = punch_cooldown_duration
+	_play_punch_animation()
+
+	# Wait for wind-up to finish before checking hits — fist connects at the start of the pitch
+	await get_tree().create_timer(0.15).timeout
+	if current_state != State.PUNCHING:
+		return  # Got knocked down during wind-up
+
+	var punch_dir = aim_direction if input_aim.length() > 0.1 else facing_direction
+	for body in get_tree().get_nodes_in_group("players"):
+		if body == self:
+			continue
+		if not ("team_index" in body) or body.team_index == team_index:
+			continue
+		var to_target = body.global_position - global_position
+		to_target.y = 0
+		if to_target.length() > punch_range:
+			continue
+		if to_target.normalized().dot(punch_dir.normalized()) < 0.3:
+			continue
+		_punch_player(body, punch_dir)
+
+	# Return to idle after pitch + hold + return phases (0.09 + 0.05 + 0.22 + small buffer)
+	await get_tree().create_timer(0.38).timeout
+	if current_state == State.PUNCHING:
+		current_state = State.IDLE
+
+func _punch_player(target: CharacterBody3D, direction: Vector3) -> void:
+	if _hit_sound_player:
+		_hit_sound_player.pitch_scale = randf_range(1.1, 1.3)  # Higher pitch than tackle
+		_hit_sound_player.play()
+	if target.has_method("receive_punch"):
+		target.receive_punch(self, direction)
+	elif target.has_method("receive_tackle"):
+		target.receive_tackle(self, direction)
 
 func _hit_player(target: CharacterBody3D) -> void:
 	if target.has_method("receive_tackle"):
@@ -920,15 +1108,24 @@ func _hit_player(target: CharacterBody3D) -> void:
 func receive_tackle(attacker: CharacterBody3D, direction: Vector3) -> void:
 	current_state = State.KNOCKED_DOWN
 	knockdown_timer = knockdown_duration / strength
-	velocity = direction * 8.0  # Stronger knockback
-	velocity.y = 3.0  # Pop up slightly
+	velocity = direction * 12.0  # Stronger horizontal pushback
+	velocity.y = 3.0  # Lower upward pop for a faster "slide"
+	
+	# Play impact sound with slight pitch randomization
+	if _hit_sound_player:
+		_hit_sound_player.pitch_scale = randf_range(0.9, 1.1)
+		_hit_sound_player.play()
+	
 	if has_ball:
-		# Fumble — release ball with some random force
+		# Fumble — release ball in direction of tackle with random arc
 		_release_ball()
 		var ball_nodes = get_tree().get_nodes_in_group("ball")
 		if ball_nodes.size() > 0:
-			var fumble_dir = Vector3(randf_range(-1, 1), 0.5, randf_range(-1, 1)).normalized()
-			ball_nodes[0].apply_impulse(fumble_dir * 5.0)
+			var rand_angle = randf_range(-0.4, 0.4) # ~23 degree arc
+			var fumble_dir = direction.rotated(Vector3.UP, rand_angle).normalized()
+			fumble_dir.y = 0.5 # Upward pop
+			fumble_dir = fumble_dir.normalized()
+			ball_nodes[0].apply_impulse(fumble_dir * 7.5) # Directed force
 		
 		# Record steal for attacker
 		if attacker != null and "team_index" in attacker and "roster_index" in attacker:
@@ -937,15 +1134,53 @@ func receive_tackle(attacker: CharacterBody3D, direction: Vector3) -> void:
 				if gm and gm.has_method("record_stat"):
 					gm.record_stat(attacker.team_index, attacker.roster_index, "steals")
 	was_tackled.emit()
-	# Visual: flatten model to show player is down
+	# Visual knockdown with "stumble"
 	if _model_root:
-		var tween = create_tween()
-		tween.tween_property(_model_root, "scale", Vector3(1.3, 0.3, 1.3), 0.15)
-		tween.tween_interval(knockdown_timer - 0.3)
-		tween.tween_property(_model_root, "scale", Vector3.ONE, 0.3)
+		if _model_tween: _model_tween.kill()
+		_model_tween = create_tween()
+		# Stumble backward first
+		_model_tween.tween_property(_model_root, "rotation:x", -0.4, 0.1)
+		# Then flatten/land
+		_model_tween.tween_property(_model_root, "scale", Vector3(1.3, 0.3, 1.3), 0.15)
+		_model_tween.parallel().tween_property(_model_root, "rotation:x", 0.0, 0.15)
+		
+		_model_tween.tween_interval(knockdown_timer - 0.3)
+		_model_tween.tween_property(_model_root, "scale", Vector3.ONE, 0.3)
 	
-	# Lose pending points!
-	scatter_pending_points()
+
+func receive_punch(attacker: CharacterBody3D, direction: Vector3) -> void:
+	## Shorter stun than a tackle — quick stumble, smaller knockback.
+	current_state = State.KNOCKED_DOWN
+	knockdown_timer = (knockdown_duration * 0.5) / strength  # Half the tackle knockdown
+	velocity = direction * 6.0   # Less force than tackle (tackle uses 12.0)
+	velocity.y = 1.5
+
+	if has_ball:
+		_release_ball()
+		var ball_nodes = get_tree().get_nodes_in_group("ball")
+		if ball_nodes.size() > 0:
+			var rand_angle = randf_range(-0.5, 0.5)
+			var fumble_dir = direction.rotated(Vector3.UP, rand_angle).normalized()
+			fumble_dir.y = 0.4
+			ball_nodes[0].apply_impulse(fumble_dir * 5.0)
+
+		if attacker != null and "team_index" in attacker and "roster_index" in attacker:
+			if attacker.team_index != team_index:
+				var gm = _get_game_manager()
+				if gm and gm.has_method("record_stat"):
+					gm.record_stat(attacker.team_index, attacker.roster_index, "steals")
+	was_tackled.emit()
+
+	if _model_root:
+		if _model_tween: _model_tween.kill()
+		_model_tween = create_tween()
+		# Stagger: quick lean in punch direction, then settle
+		_model_tween.tween_property(_model_root, "rotation:z", direction.x * 0.5, 0.1)
+		_model_tween.parallel().tween_property(_model_root, "scale", Vector3(1.1, 0.7, 1.1), 0.1)
+		_model_tween.tween_interval(knockdown_timer - 0.2)
+		_model_tween.set_parallel(true)
+		_model_tween.tween_property(_model_root, "scale", Vector3.ONE, 0.2)
+		_model_tween.tween_property(_model_root, "rotation:z", 0.0, 0.2)
 
 func receive_hazard_hit(knockback_dir: Vector3, force: float, drop_ball: bool = true) -> void:
 	## Called when a hazard hits this player.
@@ -961,8 +1196,6 @@ func receive_hazard_hit(knockback_dir: Vector3, force: float, drop_ball: bool = 
 			var fumble_dir = Vector3(randf_range(-1, 1), 0.8, randf_range(-1, 1)).normalized()
 			ball_nodes[0].apply_impulse(fumble_dir * 6.0)
 	
-	# Lose pending points!
-	scatter_pending_points()
 	
 	# Visual knockdown
 	if _model_root:
@@ -1063,20 +1296,6 @@ func pickup_ball(ball_body: RigidBody3D) -> void:
 
 	got_ball.emit()
 
-func add_pending_points(amount: int) -> void:
-	pending_free_points += amount
-	var game_mgr = _get_game_manager()
-	if game_mgr and game_mgr.has_method("record_coin_pickup_combo"):
-		game_mgr.record_coin_pickup_combo(team_index, self)
-	print("[%s] Collected coin! Pending: %d" % [name, pending_free_points])
-	
-	if is_human:
-		var hud = get_tree().get_first_node_in_group("hud")
-		if hud and hud.has_method("show_gaudy_message"):
-			hud.show_gaudy_message("+%d FREE POINTS (TOTAL: %d)!" % [amount, pending_free_points], 1.5)
-	else:
-		show_floating_text("+%d PTS" % amount, Color.GOLD)
-
 func show_floating_text(msg: String, color: Color = Color.WHITE) -> void:
 	if not floating_text:
 		return
@@ -1091,63 +1310,21 @@ func show_floating_text(msg: String, color: Color = Color.WHITE) -> void:
 	tween.parallel().tween_property(floating_text, "modulate:a", 0.0, 1.5)
 	tween.tween_callback(func(): floating_text.visible = false)
 
-func scatter_pending_points() -> void:
-	if pending_free_points <= 0:
-		return
-	
-	print("[%s] LOST %d PENDING POINTS!" % [name, pending_free_points])
-	
-	var CoinScene = load("res://scenes/items/coin.tscn")
-	if not CoinScene:
-		pending_free_points = 0
-		return
-		
-	# Scatter half? All? Let's say ALL for maximum punishment.
-	var count = pending_free_points
-	pending_free_points = 0
-	
-	for i in range(count):
-		var coin = CoinScene.instantiate()
-		coin.position = global_position + Vector3(0, 1.0, 0)
-		get_parent().add_child(coin)
-		
-		# Give it some velocity
-		var angle = randf() * TAU
-		var force = randf_range(2.0, 5.0)
-		var vel = Vector3(cos(angle) * force, randf_range(3.0, 6.0), sin(angle) * force)
-		
-		# If coin has physics, apply impulse. 
-		# Our Coin is an Area3D with a Mesh, so we need to fake physics or change it to RigidBody.
-		# For fast implementation, let's just make a simple "PhysicsCoin" wrapper 
-		# OR just animate it flying out.
-		
-		_animate_scattered_coin(coin, vel)
-
-func _animate_scattered_coin(coin_node: Node3D, initial_vel: Vector3) -> void:
-	# Simple manual physics for a few seconds until it lands
-	var velocity = initial_vel
-	var pos = coin_node.position
-	var drag = 0.5
-	var gravity = 9.8
-	
-	# Create a tween to handle the "physics" so we don't have to put logic in coin.gd
-	# actually, it's better to just let it sit there. 
-	# modifying coin.gd to be a rigidbody would be best, but let's try a simple tween Arc for now.
-	
-	var land_pos = pos + Vector3(velocity.x, 0, velocity.z) # Approximation
-	
-	var tween = create_tween()
-	tween.tween_property(coin_node, "position", land_pos, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tween.parallel().tween_property(coin_node, "position:y", 0.5, 0.5).from(3.0).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 
 func _release_ball() -> void:
+	if has_ball:
+		if held_ball and is_instance_valid(held_ball):
+			held_ball.freeze = false # CRITICAL: Ensure ball physics resume
+			if held_ball.has_method("release"):
+				held_ball.release(self, team_index)
+		_clear_possession_state()
+		lost_ball.emit()
+
+func _clear_possession_state() -> void:
+	## Internal helper to reset local variables without triggering full release logic.
 	has_ball = false
-	pickup_cooldown = 0.5  # Prevent instantly grabbing it back during the same frame or before it exits Area3D
-	if held_ball:
-		held_ball.freeze = false  # Always unfreeze when releasing
-		if held_ball.has_method("release"):
-			held_ball.release(self, team_index)
-	lost_ball.emit()
+	held_ball = null
+	pickup_cooldown = 0.5 # Prevent instant re-grab
 
 func _on_ball_entered(body: Node3D) -> void:
 	if body.is_in_group("ball") and not has_ball and current_state != State.KNOCKED_DOWN and not frozen and pickup_cooldown <= 0:
@@ -1162,3 +1339,40 @@ func _get_game_manager() -> Node:
 
 func get_aim_direction_3d() -> Vector3:
 	return aim_direction
+
+func force_reset_state() -> void:
+	## Manually clears any active tackle/knockdown state and resets visual scale/rotation.
+	## Used during possession resets (tip-off, inbounds) to prevent "stuck" animations.
+	current_state = State.IDLE
+	knockdown_timer = 0.0
+	tackle_cooldown = 0.0
+	punch_cooldown = 0.0
+	pickup_cooldown = 0.0
+
+	# Clear buffered inputs
+	input_pass = false
+	input_shoot = false
+	input_tackle = false
+	input_punch = false
+	input_call_pass = false
+	input_jump = false
+	
+	if _model_tween:
+		_model_tween.kill()
+	if _arm_tween:
+		_arm_tween.kill()
+	
+	if _model_root:
+		_model_root.scale = Vector3.ONE
+		_model_root.rotation = Vector3.ZERO
+	
+	if _left_arm_pivot:
+		_left_arm_pivot.rotation = Vector3.ZERO
+	if _right_arm_pivot:
+		_right_arm_pivot.rotation = Vector3.ZERO
+	if _left_elbow:
+		_left_elbow.rotation = Vector3(0.15, 0.0, 0.0)
+	if _right_elbow:
+		_right_elbow.rotation = Vector3(0.15, 0.0, 0.0)
+	
+	velocity = Vector3.ZERO

@@ -84,6 +84,19 @@ var _swatch_btns_b: Array = []
 
 const LOGO_SIZE = 96
 
+const QUARTERS_VALUES: Array = [15, 30, 60, 120]
+const QUARTERS_LABELS: Array = ["15 Sec", "30 Sec", "1 Min", "2 Min"]
+const TEAM_SIZE_VALUES: Array = [3, 4, 5]
+const TEAM_SIZE_LABELS: Array = ["3v3", "4v4", "5v5"]
+var _quarters_index: int = 1   # default: 30 Sec
+var _team_size_index: int = 0  # default: 3v3
+var _sel_team_size: PanelContainer = null
+var _sel_quarters:  PanelContainer = null
+var _lbl_team_size: Label = null
+var _lbl_quarters:  Label = null
+var _last_joy_ms: int = 0
+const JOY_COOLDOWN_MS: int = 200
+
 func _ready() -> void:
 	if LeagueManager.divisions.is_empty():
 		LeagueManager.generate_default_league()
@@ -97,19 +110,19 @@ func _ready() -> void:
 	if available_teams.size() > 1:
 		selected_color_b_index = _nearest_color_index(available_teams[team_b_index].color_primary)
 	
-	# Quarter Options
-	opt_quarters.add_item("15 Seconds", 15)
-	opt_quarters.add_item("30 Seconds", 30)
-	opt_quarters.add_item("1 Minute", 60)
-	opt_quarters.add_item("2 Minutes", 120)
-	opt_quarters.select(1)
-	
-	# Team Size Options
-	opt_team_size.add_item("3v3", 3)
-	opt_team_size.add_item("4v4", 4)
-	opt_team_size.add_item("5v5", 5)
-	opt_team_size.select(0)
-	opt_team_size.item_selected.connect(func(_idx): _update_ui())
+	# Build compact inline selectors replacing OptionButtons
+	opt_quarters.hide()
+	opt_team_size.hide()
+	var res_sz = _build_arrow_selector(
+		opt_team_size.get_parent() as HBoxContainer,
+		TEAM_SIZE_LABELS, _team_size_index,
+		func(i): _team_size_index = i; _update_ui())
+	_sel_team_size = res_sz[0]; _lbl_team_size = res_sz[1]
+	var res_q = _build_arrow_selector(
+		opt_quarters.get_parent() as HBoxContainer,
+		QUARTERS_LABELS, _quarters_index,
+		func(i): _quarters_index = i; _update_ui())
+	_sel_quarters = res_q[0]; _lbl_quarters = res_q[1]
 	
 	# Court Picker — single display with ◀/▶ arrows
 	_build_court_display()
@@ -117,6 +130,16 @@ func _ready() -> void:
 	btn_court_next.pressed.connect(func(): _cycle_court(1))
 	_style_arrow_button(btn_court_prev)
 	_style_arrow_button(btn_court_next)
+	
+	# High-Octane Setup Audio (Chrome Gauntlet)
+	var music = AudioStreamPlayer.new()
+	var stream = load("res://assets/sounds/Chrome_Gauntlet.mp3")
+	if stream is AudioStreamMP3:
+		stream.loop = true
+	music.stream = stream
+	music.bus = "Music"
+	add_child(music)
+	music.play()
 	
 	# Connect interaction
 	btn_start.pressed.connect(_on_start_pressed)
@@ -149,44 +172,141 @@ func _ready() -> void:
 	for z in [zone_a, zone_spec, zone_b]:
 		z.focus_mode = Control.FOCUS_ALL
 		z.gui_input.connect(func(e): _on_side_key_input(e))
+		z.focus_entered.connect(func(): _update_ui())
+		z.focus_exited.connect(func(): _update_ui())
 	
 	# Focus highlight tracking — redraw borders on focus changes
 	for item in [team_a_container, team_b_container]:
 		item.focus_entered.connect(func(): _update_team_panel_borders())
 		item.focus_exited.connect(func(): _update_team_panel_borders())
 	
-	# Set up keyboard-only navigation neighbors
-	# Team A → right goes to Team B
-	team_a_container.focus_neighbor_right = team_b_container.get_path()
-	# Team B → right goes to first side zone
-	team_b_container.focus_neighbor_right = zone_a.get_path()
-	# Team B → left goes back to Team A
-	team_b_container.focus_neighbor_left = team_a_container.get_path()
-	# Team A → down goes to side selector
-	team_a_container.focus_neighbor_bottom = zone_a.get_path()
-	# Team B → down goes to side selector
-	team_b_container.focus_neighbor_bottom = zone_b.get_path()
-	
+	# Give the court arrow buttons focus so they're reachable by controller
+	btn_court_prev.focus_mode = Control.FOCUS_ALL
+	btn_court_next.focus_mode = Control.FOCUS_ALL
+
+	# ── Main screen focus chain ─────────────────────────────────────
+	# Team cards: A ↔ B, B → right → team size selector
+	team_a_container.focus_neighbor_right  = team_a_container.get_path_to(team_b_container)
+	team_b_container.focus_neighbor_left   = team_b_container.get_path_to(team_a_container)
+	team_b_container.focus_neighbor_right  = team_b_container.get_path_to(_sel_team_size)
+
+	# Down from team cards → zone selector
+	team_a_container.focus_neighbor_bottom = team_a_container.get_path_to(zone_a)
+	team_b_container.focus_neighbor_bottom = team_b_container.get_path_to(zone_b)
+
+	# Zone selector (left/right cycles within zones, up → team cards)
+	zone_a.focus_neighbor_left   = zone_a.get_path_to(team_b_container)
+	zone_a.focus_neighbor_right  = zone_a.get_path_to(zone_spec)
+	zone_a.focus_neighbor_top    = zone_a.get_path_to(team_a_container)
+	zone_spec.focus_neighbor_left  = zone_spec.get_path_to(zone_a)
+	zone_spec.focus_neighbor_right = zone_spec.get_path_to(zone_b)
+	zone_spec.focus_neighbor_top   = zone_spec.get_path_to(team_a_container)
+	zone_b.focus_neighbor_left  = zone_b.get_path_to(zone_spec)
+	zone_b.focus_neighbor_top   = zone_b.get_path_to(team_b_container)
+
+	# Down from zones → team size selector
+	zone_a.focus_neighbor_bottom    = zone_a.get_path_to(_sel_team_size)
+	zone_spec.focus_neighbor_bottom = zone_spec.get_path_to(_sel_team_size)
+	zone_b.focus_neighbor_bottom    = zone_b.get_path_to(_sel_team_size)
+
+	# Team Size selector
+	_sel_team_size.focus_neighbor_top    = _sel_team_size.get_path_to(zone_spec)
+	_sel_team_size.focus_neighbor_bottom = _sel_team_size.get_path_to(_sel_quarters)
+
+	# Quarter Length selector
+	_sel_quarters.focus_neighbor_top    = _sel_quarters.get_path_to(_sel_team_size)
+	_sel_quarters.focus_neighbor_bottom = _sel_quarters.get_path_to(btn_court_prev)
+
+	# Court row
+	btn_court_prev.focus_neighbor_top    = btn_court_prev.get_path_to(_sel_quarters)
+	btn_court_next.focus_neighbor_top    = btn_court_next.get_path_to(_sel_quarters)
+	btn_court_prev.focus_neighbor_right  = btn_court_prev.get_path_to(btn_court_next)
+	btn_court_next.focus_neighbor_left   = btn_court_next.get_path_to(btn_court_prev)
+	btn_court_prev.focus_neighbor_bottom = btn_court_prev.get_path_to(btn_items)
+	btn_court_next.focus_neighbor_bottom = btn_court_next.get_path_to(btn_items)
+
+	# Items → Start (right OR down), Back
+	btn_items.focus_neighbor_top    = btn_items.get_path_to(btn_court_prev)
+	btn_items.focus_neighbor_right  = btn_items.get_path_to(btn_start)
+	btn_items.focus_neighbor_bottom = btn_items.get_path_to(btn_start)
+	btn_start.focus_neighbor_top    = btn_start.get_path_to(btn_items)
+	btn_start.focus_neighbor_bottom = btn_start.get_path_to(btn_back)
+	btn_back.focus_neighbor_top     = btn_back.get_path_to(btn_start)
+	btn_back.focus_neighbor_bottom  = btn_back.get_path_to(team_a_container)
+
+	# ── Items modal internal focus chain ────────────────────────────
+	var checks = [chk_mine, chk_saw, chk_missile, chk_powerup, chk_coin, chk_crowd]
+	for i in range(checks.size()):
+		var cur = checks[i]
+		var nxt = checks[(i + 1) % checks.size()]
+		var prv = checks[(i - 1 + checks.size()) % checks.size()]
+		cur.focus_neighbor_bottom = cur.get_path_to(nxt)
+		cur.focus_neighbor_top    = cur.get_path_to(prv)
+	chk_crowd.focus_neighbor_bottom = chk_crowd.get_path_to(btn_modal_close)
+	btn_modal_close.focus_neighbor_top = btn_modal_close.get_path_to(chk_crowd)
+	btn_modal_close.focus_neighbor_bottom = btn_modal_close.get_path_to(chk_mine)
+
 	_apply_styling()
 	_update_ui()
 	team_a_container.grab_focus()
+	SceneManager.notify_scene_ready()
 
 var _starting: bool = false
 
+func _input(event: InputEvent) -> void:
+	# ── Items modal: focus trap + close on B/Escape ──────────────────
+	if items_modal.visible:
+		var focused = get_viewport().gui_get_focus_owner()
+		if focused == null or not items_modal.is_ancestor_of(focused):
+			btn_modal_close.grab_focus()
+		if event.is_action_pressed("ui_cancel"):
+			_close_items_modal()
+			get_viewport().set_input_as_handled()
+		return  # Block all other input while modal is open
+
+	var foc = get_viewport().gui_get_focus_owner()
+
+	# ── Selector panel cycling (left/right) ─────────────────────────
+	if foc == _sel_team_size:
+		if event.is_action_pressed("ui_left"):
+			_team_size_index = (_team_size_index - 1 + TEAM_SIZE_VALUES.size()) % TEAM_SIZE_VALUES.size()
+			_update_ui(); get_viewport().set_input_as_handled()
+		elif event.is_action_pressed("ui_right"):
+			_team_size_index = (_team_size_index + 1) % TEAM_SIZE_VALUES.size()
+			_update_ui(); get_viewport().set_input_as_handled()
+	elif foc == _sel_quarters:
+		if event.is_action_pressed("ui_left"):
+			_quarters_index = (_quarters_index - 1 + QUARTERS_VALUES.size()) % QUARTERS_VALUES.size()
+			_update_ui(); get_viewport().set_input_as_handled()
+		elif event.is_action_pressed("ui_right"):
+			_quarters_index = (_quarters_index + 1) % QUARTERS_VALUES.size()
+			_update_ui(); get_viewport().set_input_as_handled()
+
+	# ── Court cycling via left/right when court row focused ───────────
+	elif foc == btn_court_prev or foc == btn_court_next:
+		if event.is_action_pressed("ui_left"):
+			_cycle_court(-1); get_viewport().set_input_as_handled()
+		elif event.is_action_pressed("ui_right"):
+			_cycle_court(1); get_viewport().set_input_as_handled()
+
 func _unhandled_input(event: InputEvent) -> void:
-	# Enter/Accept starts the match from anywhere (unless modal is open)
+	if event.is_action_pressed("ui_cancel") and not items_modal.visible:
+		_on_back_pressed()
+		return
+	# Accept only triggers start when btn_start is explicitly focused
 	if event.is_action_pressed("ui_accept") and not items_modal.visible and not _starting:
-		_starting = true
-		_on_start_pressed()
+		if get_viewport().gui_get_focus_owner() == btn_start:
+			_starting = true
+			_on_start_pressed()
 
 func _on_zone_click(event: InputEvent, side: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_set_side(side)
 
 func _on_side_key_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_left"):
+	if event.is_action_pressed("ui_left") and _joy_ready():
 		_cycle_side(-1); get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("ui_right"):
+	elif event.is_action_pressed("ui_right") and _joy_ready():
 		_cycle_side(1); get_viewport().set_input_as_handled()
 
 # =====================================================================
@@ -219,11 +339,11 @@ func _update_items_button_text() -> void:
 		if v: enabled_count += 1
 	
 	if enabled_count == items.size():
-		btn_items.text = "All Enabled ▸"
+		btn_items.text = "All Enabled ▶"
 	elif enabled_count == 0:
-		btn_items.text = "All Disabled ▸"
+		btn_items.text = "All Disabled ▶"
 	else:
-		btn_items.text = "%d / %d Enabled ▸" % [enabled_count, items.size()]
+		btn_items.text = "%d / %d Enabled ▶" % [enabled_count, items.size()]
 
 # =====================================================================
 #  FOCUS HIGHLIGHTS
@@ -413,13 +533,14 @@ void fragment() {
 	for p in ["MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamA/Label_Header","MarginContainer/MainHBox/VBoxContainer/HBox_Teams/VBox_TeamB/Label_Header"]:
 		get_node(p).add_theme_color_override("font_color", Color(0.5, 0.5, 0.65))
 	
-	# Arrow buttons
+	# Arrow buttons — no focus (team containers handle team cycling via gui_input)
 	var arrow_dim = Color(0.45, 0.45, 0.6)
 	for btn in [btn_a_up, btn_a_down, btn_b_up, btn_b_down]:
 		btn.add_theme_color_override("font_color", arrow_dim)
 		btn.add_theme_color_override("font_hover_color", Color(0.7, 0.7, 0.9))
 		btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		btn.focus_mode = Control.FOCUS_NONE
+	# Court arrows keep their focus (set above in _ready)
 	
 	# Options labels
 	for p in ["MarginContainer/MainHBox/VBoxContainer/OptionsPanel/OptionsVBox/HBox_TeamSize/Label",
@@ -497,16 +618,30 @@ func _style_button_subtle(btn: Button) -> void:
 # =====================================================================
 
 func _on_team_a_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_up"):
+	if event.is_action_pressed("ui_up") and _joy_ready():
 		_cycle_team_a(-1); accept_event()
-	elif event.is_action_pressed("ui_down"):
+	elif event.is_action_pressed("ui_down") and _joy_ready():
 		_cycle_team_a(1); accept_event()
+	elif event is InputEventJoypadButton and event.pressed:
+		if event.button_index == JOY_BUTTON_LEFT_SHOULDER:
+			_select_color_a((_swatch_btns_a.size() + selected_color_a_index - 1) % _swatch_btns_a.size())
+			accept_event()
+		elif event.button_index == JOY_BUTTON_RIGHT_SHOULDER:
+			_select_color_a((selected_color_a_index + 1) % _swatch_btns_a.size())
+			accept_event()
 
 func _on_team_b_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_up"):
+	if event.is_action_pressed("ui_up") and _joy_ready():
 		_cycle_team_b(-1); accept_event()
-	elif event.is_action_pressed("ui_down"):
+	elif event.is_action_pressed("ui_down") and _joy_ready():
 		_cycle_team_b(1); accept_event()
+	elif event is InputEventJoypadButton and event.pressed:
+		if event.button_index == JOY_BUTTON_LEFT_SHOULDER:
+			_select_color_b((_swatch_btns_b.size() + selected_color_b_index - 1) % _swatch_btns_b.size())
+			accept_event()
+		elif event.button_index == JOY_BUTTON_RIGHT_SHOULDER:
+			_select_color_b((selected_color_b_index + 1) % _swatch_btns_b.size())
+			accept_event()
 
 func _cycle_team_a(dir: int) -> void:
 	team_a_index = (team_a_index + dir) % available_teams.size()
@@ -532,6 +667,103 @@ func _nearest_color_index(c: Color) -> int:
 			best_d = d
 			best_i = i
 	return best_i
+
+# Returns true if enough time has elapsed since the last joystick input.
+func _joy_ready() -> bool:
+	var now = Time.get_ticks_msec()
+	if now - _last_joy_ms >= JOY_COOLDOWN_MS:
+		_last_joy_ms = now
+		return true
+	return false
+
+# Builds a compact single-element selector  < value >  and adds it to parent.
+# Returns [panel, value_label]. The panel is the focusable element;
+# left/right input is handled in _input(). Inner < > buttons also work on click.
+func _build_arrow_selector(parent: HBoxContainer, labels: Array, initial_idx: int, on_change: Callable) -> Array:
+	var panel = PanelContainer.new()
+	panel.focus_mode = Control.FOCUS_ALL
+	panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_style_selector_panel(panel, false)
+	panel.focus_entered.connect(func(): _style_selector_panel(panel, true))
+	panel.focus_exited.connect(func(): _style_selector_panel(panel, false))
+
+	var hbox = HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 2)
+	panel.add_child(hbox)
+
+	var arrow_l = Button.new()
+	arrow_l.text = "◀"
+	arrow_l.flat = true
+	arrow_l.focus_mode = Control.FOCUS_NONE
+	arrow_l.add_theme_color_override("font_color", Color(0.55, 0.55, 0.75))
+	arrow_l.add_theme_color_override("font_hover_color", Color(0.85, 0.85, 1.0))
+	hbox.add_child(arrow_l)
+
+	var lbl = Label.new()
+	lbl.text = labels[initial_idx]
+	lbl.custom_minimum_size = Vector2(54, 0)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 15)
+	lbl.add_theme_color_override("font_color", Color.WHITE)
+	lbl.focus_mode = Control.FOCUS_NONE
+	hbox.add_child(lbl)
+
+	var arrow_r = Button.new()
+	arrow_r.text = "▶"
+	arrow_r.flat = true
+	arrow_r.focus_mode = Control.FOCUS_NONE
+	arrow_r.add_theme_color_override("font_color", Color(0.55, 0.55, 0.75))
+	arrow_r.add_theme_color_override("font_hover_color", Color(0.85, 0.85, 1.0))
+	hbox.add_child(arrow_r)
+
+	arrow_l.pressed.connect(func():
+		var cur = labels.find(lbl.text)
+		var new_i = (cur - 1 + labels.size()) % labels.size()
+		lbl.text = labels[new_i]
+		on_change.call(new_i)
+	)
+	arrow_r.pressed.connect(func():
+		var cur = labels.find(lbl.text)
+		var new_i = (cur + 1) % labels.size()
+		lbl.text = labels[new_i]
+		on_change.call(new_i)
+	)
+
+	parent.add_child(panel)
+	return [panel, lbl]
+
+func _style_selector_panel(panel: PanelContainer, focused: bool) -> void:
+	var sb = StyleBoxFlat.new()
+	sb.bg_color     = Color(0.10, 0.10, 0.18, 0.9) if focused else Color(0.07, 0.07, 0.13, 0.75)
+	sb.border_color = Color(0.45, 0.65, 1.0, 0.9)  if focused else Color(0.25, 0.25, 0.45, 0.5)
+	sb.set_border_width_all(2 if focused else 1)
+	sb.set_corner_radius_all(7)
+	sb.set_content_margin_all(6)
+	panel.add_theme_stylebox_override("panel", sb)
+
+func _regen_player_at(team: Resource, idx: int) -> void:
+	if team.roster.size() <= idx: return
+	var first_names = ["John","Alex","Chris","Sam","Pat","Mike","David","James","Robert","William","Joseph","Thomas","Charles","Daniel","Matthew","Anthony","Mark","Steven","Paul","Andrew","Kevin","Brian","George","Edward","Ronald","Timothy","Jason","Jeffrey","Ryan","Jacob"]
+	var last_names  = ["Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Davis","Rodriguez","Martinez","Hernandez","Lopez","Gonzalez","Wilson","Anderson","Thomas","Taylor","Moore","Jackson","Martin","Lee","Perez","Thompson","White","Harris","Sanchez","Clark"]
+	var p_name = first_names[randi() % first_names.size()] + " " + last_names[randi() % last_names.size()]
+	var PlayerDataScript = load("res://scripts/data/player_data.gd")
+	var p = PlayerDataScript.new(p_name, 100)
+	p.number = randi_range(0, 99)
+	p.randomize_with_archetype(1)
+	team.roster[idx] = p
+	_update_ui()
+
+func _regen_team(team: Resource) -> void:
+	var first_names = ["John","Alex","Chris","Sam","Pat","Mike","David","James","Robert","William","Joseph","Thomas","Charles","Daniel","Matthew","Anthony","Mark","Steven","Paul","Andrew","Kevin","Brian","George","Edward","Ronald","Timothy","Jason","Jeffrey","Ryan","Jacob"]
+	var last_names  = ["Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Davis","Rodriguez","Martinez","Hernandez","Lopez","Gonzalez","Wilson","Anderson","Thomas","Taylor","Moore","Jackson","Martin","Lee","Perez","Thompson","White","Harris","Sanchez","Clark"]
+	var PlayerDataScript = load("res://scripts/data/player_data.gd")
+	for idx in range(team.roster.size()):
+		var p_name = first_names[randi() % first_names.size()] + " " + last_names[randi() % last_names.size()]
+		var p = PlayerDataScript.new(p_name, 100)
+		p.number = randi_range(0, 99)
+		p.randomize_with_archetype(1)
+		team.roster[idx] = p
+	_update_ui()
 
 # Builds a compact swatch strip and appends it to the given parent control.
 func _build_swatch_strip(parent: Control, is_team_a: bool) -> void:
@@ -650,49 +882,47 @@ func _update_ui() -> void:
 	# Restyle swatches
 	_apply_swatch_styles(_swatch_btns_a, selected_color_a_index)
 	_apply_swatch_styles(_swatch_btns_b, selected_color_b_index)
-	
-	# --- Side selector: 🎮 icon moves between zones ---
+
+	# Update inline selector labels
+	if _lbl_quarters:  _lbl_quarters.text  = QUARTERS_LABELS[_quarters_index]
+	if _lbl_team_size: _lbl_team_size.text = TEAM_SIZE_LABELS[_team_size_index]
+
+	# --- Side selector: [P] icon moves between zones ---
 	zone_a_label.text = ""
 	zone_spec_label.text = "AI vs AI"
 	zone_b_label.text = ""
-	
-	# Reset all zones to inactive
-	_style_zone_inactive(zone_a)
-	_style_zone_inactive(zone_spec)
-	_style_zone_inactive(zone_b)
 	zone_spec_label.add_theme_color_override("font_color", Color(0.4, 0.4, 0.55))
-	
+
 	match selected_side:
 		0: # Play as Team A
 			zone_a_label.text = "🎮"
-			_style_zone_active(zone_a, t_a.color_primary)
 		1: # Play as Team B
 			zone_b_label.text = "🎮"
-			_style_zone_active(zone_b, t_b.color_primary)
 		2: # Spectate
-			zone_spec_label.text = "🎮  AI vs AI"
-			_style_zone_active(zone_spec, Color(0.5, 0.5, 0.7))
+			zone_spec_label.text = "AI vs AI"
+
+	# Zones: active (selected) + focused states
+	_style_zone(zone_a,    selected_side == 0, t_a.color_primary)
+	_style_zone(zone_spec, selected_side == 2, Color(0.5, 0.5, 0.7))
+	_style_zone(zone_b,    selected_side == 1, t_b.color_primary)
 	
 	_update_team_panel_borders()
 	_update_court_display()
 	_update_side_rosters(t_a, t_b)
 
-func _style_zone_inactive(zone: PanelContainer) -> void:
+func _style_zone(zone: PanelContainer, active: bool, active_color: Color = Color.WHITE) -> void:
+	var focused = zone.has_focus()
 	var sb = StyleBoxFlat.new()
-	sb.bg_color = Color(0.06, 0.06, 0.12, 0.4)
-	sb.border_color = Color(0.15, 0.15, 0.25, 0.3)
-	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(6)
 	sb.set_content_margin_all(4)
-	zone.add_theme_stylebox_override("panel", sb)
-
-func _style_zone_active(zone: PanelContainer, color: Color) -> void:
-	var sb = StyleBoxFlat.new()
-	sb.bg_color = Color(color.r * 0.2, color.g * 0.2, color.b * 0.2, 0.8)
-	sb.border_color = Color(color.r, color.g, color.b, 0.7)
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(6)
-	sb.set_content_margin_all(4)
+	if active:
+		sb.bg_color = Color(active_color.r * 0.2, active_color.g * 0.2, active_color.b * 0.2, 0.8)
+		sb.border_color = active_color.lightened(0.2 if focused else 0.0)
+		sb.set_border_width_all(3 if focused else 2)
+	else:
+		sb.bg_color = Color(0.06, 0.06, 0.12, 0.55 if focused else 0.4)
+		sb.border_color = Color(0.6, 0.6, 0.85, 0.7) if focused else Color(0.15, 0.15, 0.25, 0.3)
+		sb.set_border_width_all(2 if focused else 1)
 	zone.add_theme_stylebox_override("panel", sb)
 
 # =====================================================================
@@ -771,8 +1001,12 @@ func _update_court_display() -> void:
 func _style_arrow_button(btn: Button) -> void:
 	btn.add_theme_color_override("font_color", Color(0.45, 0.45, 0.6))
 	btn.add_theme_color_override("font_hover_color", Color(0.7, 0.7, 0.9))
-	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	btn.focus_mode = Control.FOCUS_NONE
+	var fsb = StyleBoxFlat.new()
+	fsb.bg_color = Color(0.12, 0.12, 0.22, 0.6)
+	fsb.border_color = Color(0.5, 0.5, 0.8, 0.6)
+	fsb.set_border_width_all(2)
+	fsb.set_corner_radius_all(5)
+	btn.add_theme_stylebox_override("focus", fsb)
 
 # =====================================================================
 #  ACTIONS
@@ -781,52 +1015,53 @@ func _style_arrow_button(btn: Button) -> void:
 func _update_side_rosters(team_a: Resource, team_b: Resource) -> void:
 	for child in left_roster.get_children(): child.queue_free()
 	for child in right_roster.get_children(): child.queue_free()
-	
-	var max_size = opt_team_size.get_selected_id()
+
+	var max_size = TEAM_SIZE_VALUES[_team_size_index]
 	_build_roster_cards(team_a, left_roster, max_size, team_a.color_primary)
 	_build_roster_cards(team_b, right_roster, max_size, team_b.color_primary)
 
 func _build_roster_cards(team: Resource, container: VBoxContainer, max_size: int, theme_color: Color) -> void:
 	container.alignment = BoxContainer.ALIGNMENT_CENTER
-	
+
 	var header_lbl = Label.new()
 	header_lbl.text = "%s Roster" % team.name
 	header_lbl.add_theme_font_size_override("font_size", 18)
 	header_lbl.add_theme_color_override("font_color", theme_color.lightened(0.3))
 	header_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	container.add_child(header_lbl)
-	
+
 	var count = min(team.roster.size(), max_size)
 	for i in range(count):
 		var p = team.roster[i]
-		
+		var p_idx = i
+
 		var pnl = PanelContainer.new()
 		pnl.gui_input.connect(func(event):
 			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 				_show_player_card(p, theme_color)
 		)
-		
+
 		var sb_normal = StyleBoxFlat.new()
 		sb_normal.bg_color = Color(0.1, 0.1, 0.15, 0.8)
 		sb_normal.border_color = theme_color.darkened(0.3)
 		sb_normal.set_border_width_all(2)
 		sb_normal.set_corner_radius_all(6)
 		sb_normal.set_content_margin_all(8)
-		
+
 		var sb_hover = sb_normal.duplicate()
 		sb_hover.bg_color = Color(0.15, 0.15, 0.22, 0.95)
 		sb_hover.border_color = theme_color.lightened(0.2)
-		
+
 		pnl.add_theme_stylebox_override("panel", sb_normal)
 		pnl.mouse_entered.connect(func(): pnl.add_theme_stylebox_override("panel", sb_hover))
 		pnl.mouse_exited.connect(func(): pnl.add_theme_stylebox_override("panel", sb_normal))
-		
+
 		var vbox = VBoxContainer.new()
 		pnl.add_child(vbox)
-		
+
 		var header_hbox = HBoxContainer.new()
 		vbox.add_child(header_hbox)
-		
+
 		if p.portrait:
 			var pr = TextureRect.new()
 			pr.texture = p.portrait
@@ -834,20 +1069,39 @@ func _build_roster_cards(team: Resource, container: VBoxContainer, max_size: int
 			pr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			pr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			header_hbox.add_child(pr)
-		
+
 		var name_lbl = Label.new()
 		name_lbl.text = " #%d %s" % [p.number, p.name]
 		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_lbl.add_theme_font_size_override("font_size", 16)
 		name_lbl.add_theme_color_override("font_color", theme_color.lightened(0.2))
 		header_hbox.add_child(name_lbl)
-		
+
 		var ovr_lbl = Label.new()
 		var p_ovr = int(round((p.speed + p.shot + p.pass_skill + p.tackle + p.strength + p.aggression) / 6.0))
 		ovr_lbl.text = "OVR: %d" % p_ovr
 		ovr_lbl.add_theme_font_size_override("font_size", 14)
 		ovr_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
 		header_hbox.add_child(ovr_lbl)
+
+		# Per-player regen button
+		var btn_r = Button.new()
+		btn_r.text = "R"
+		btn_r.tooltip_text = "Regenerate Player"
+		btn_r.custom_minimum_size = Vector2(28, 28)
+		btn_r.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		btn_r.focus_mode = Control.FOCUS_NONE
+		var sb_r = StyleBoxFlat.new()
+		sb_r.bg_color = Color(0.15, 0.22, 0.35, 0.9)
+		sb_r.border_color = Color(0.3, 0.5, 0.9, 0.7)
+		sb_r.set_border_width_all(1)
+		sb_r.set_corner_radius_all(4)
+		btn_r.add_theme_stylebox_override("normal", sb_r)
+		var sb_rh = sb_r.duplicate(); sb_rh.bg_color = Color(0.2, 0.35, 0.55, 1.0)
+		btn_r.add_theme_stylebox_override("hover", sb_rh)
+		btn_r.add_theme_font_size_override("font_size", 12)
+		btn_r.pressed.connect(func(): _regen_player_at(team, p_idx))
+		header_hbox.add_child(btn_r)
 		
 		var stat_panel = PanelContainer.new()
 		var stat_bg = StyleBoxFlat.new()
@@ -921,6 +1175,24 @@ func _build_roster_cards(team: Resource, container: VBoxContainer, max_size: int
 		
 		container.add_child(pnl)
 
+	# Regenerate Team button at bottom of roster
+	var btn_regen = Button.new()
+	btn_regen.text = "REGENERATE TEAM"
+	btn_regen.focus_mode = Control.FOCUS_NONE
+	var sb_regen = StyleBoxFlat.new()
+	sb_regen.bg_color = Color(0.12, 0.18, 0.30, 0.85)
+	sb_regen.border_color = Color(0.3, 0.5, 0.9, 0.5)
+	sb_regen.set_border_width_all(1)
+	sb_regen.set_corner_radius_all(6)
+	sb_regen.set_content_margin_all(8)
+	btn_regen.add_theme_stylebox_override("normal", sb_regen)
+	var sb_regen_h = sb_regen.duplicate(); sb_regen_h.bg_color = Color(0.18, 0.28, 0.46, 1.0)
+	btn_regen.add_theme_stylebox_override("hover", sb_regen_h)
+	btn_regen.add_theme_color_override("font_color", Color(0.55, 0.75, 1.0))
+	btn_regen.add_theme_font_size_override("font_size", 14)
+	btn_regen.pressed.connect(func(): _regen_team(team))
+	container.add_child(btn_regen)
+
 func _show_player_card(player: Resource, theme_color: Color) -> void:
 	var m_scene = load("res://ui/player_card_modal.tscn")
 	var m_inst = m_scene.instantiate()
@@ -938,12 +1210,9 @@ func _get_team_rating(team: Resource) -> int:
 func _on_start_pressed() -> void:
 	var t_a = available_teams[team_a_index]
 	var t_b = available_teams[team_b_index]
-	
-	var q_len = opt_quarters.get_selected_id()
-	if q_len <= 0: q_len = 30
-	
-	var t_size = opt_team_size.get_selected_id()
-	if t_size <= 0: t_size = 3
+
+	var q_len  = QUARTERS_VALUES[_quarters_index]
+	var t_size = TEAM_SIZE_VALUES[_team_size_index]
 	
 	var enabled_items = _get_enabled_items()
 	var any_items = false

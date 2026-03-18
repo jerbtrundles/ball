@@ -22,6 +22,11 @@ var _shot_origin: Vector3 = Vector3.ZERO  # Where the shot was taken from (for 3
 var _oob_cooldown: float = 0.0  # Prevent rapid OOB triggers
 var _oob_disabled: bool = false  # Used during inbound passes
 
+# Trail effect
+var _trail_meshes: Array = []
+var _trail_positions: Array = []
+const _TRAIL_MAX: int = 8
+
 @onready var mesh: MeshInstance3D = $Mesh
 @onready var collision: CollisionShape3D = $CollisionShape
 
@@ -42,16 +47,80 @@ func _setup_visuals() -> void:
 	if mesh:
 		mesh.material_override = mat
 
+	# Build trail spheres (top_level so they stay in world space)
+	for i in range(_TRAIL_MAX):
+		var t = float(i) / float(_TRAIL_MAX - 1)
+		var tm = MeshInstance3D.new()
+		tm.top_level = true
+		var sm = SphereMesh.new()
+		sm.radius = lerp(0.10, 0.03, t)
+		sm.height = sm.radius * 2.0
+		sm.radial_segments = 6
+		sm.rings = 3
+		tm.mesh = sm
+		var tmat = StandardMaterial3D.new()
+		tmat.albedo_color = Color(0.95, 0.4, 0.05, lerp(0.65, 0.0, t))
+		tmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		tmat.emission_enabled = true
+		tmat.emission = Color(1.0, 0.3, 0.0) * lerp(0.5, 0.0, t)
+		tm.material_override = tmat
+		tm.visible = false
+		add_child(tm)
+		_trail_meshes.append(tm)
+
+func _process(delta: float) -> void:
+	# ── Trail ──────────────────────────────────────────────────────────────
+	var in_flight: bool = freeze and _was_shot
+	if in_flight:
+		_trail_positions.push_front(global_position)
+		if _trail_positions.size() > _TRAIL_MAX:
+			_trail_positions.resize(_TRAIL_MAX)
+		for i in range(_trail_meshes.size()):
+			if i < _trail_positions.size():
+				_trail_meshes[i].global_position = _trail_positions[i]
+				_trail_meshes[i].visible = true
+			else:
+				_trail_meshes[i].visible = false
+	else:
+		if not _trail_positions.is_empty():
+			_trail_positions.clear()
+		for tm in _trail_meshes:
+			tm.visible = false
+
+	# ── Cooldown (ticks even while frozen / held) ───────────────────────────
+	if _oob_cooldown > 0:
+		_oob_cooldown -= delta
+
+	# ── Carrier OOB ─────────────────────────────────────────────────────────
+	# When a player holds the ball the RigidBody3D is frozen so _physics_process
+	# won't run.  Monitor the holder's feet position here instead.
+	if _oob_disabled or _oob_cooldown > 0:
+		return
+	if holder == null or not is_instance_valid(holder):
+		return
+	var hpos = holder.global_position
+	# Trigger as soon as the carrier's centre reaches the boundary line.
+	# Subtract a small margin (0.15) so the outer edge of the player body
+	# hits the line before the centre does — matching visual expectation.
+	if abs(hpos.x) >= court_half_width - 0.15 or abs(hpos.z) >= court_half_length - 0.15:
+		_oob_cooldown = 2.0
+		went_out_of_bounds.emit(last_touch_team, hpos)
+
 func _physics_process(delta: float) -> void:
 	# Skip all checks when ball is frozen (tween-controlled shot in flight)
 	if freeze:
 		return
 	
-	if _oob_cooldown > 0:
-		_oob_cooldown -= delta
+	# Safety check: if holder is no longer valid or doesn't have the ball, release possession
+	if holder != null:
+		if not is_instance_valid(holder) or holder.get("has_ball") == false:
+			holder = null
+			# Only unfreeze if we aren't mid-shot-tween
+			if not _was_shot:
+				freeze = false
 	
 	# Don't clamp while held
-	if holder != null:
+	if is_held():
 		return
 	
 	# Floor bounce
@@ -69,24 +138,26 @@ func _physics_process(delta: float) -> void:
 		linear_velocity.x *= floor_friction
 		linear_velocity.z *= floor_friction
 	
-	# --- Out-of-bounds detection (tight — just beyond the walls) ---
+	# --- Out-of-bounds detection ---
+	# Threshold is the exact court boundary minus the ball radius so the signal
+	# fires the instant the ball's surface first intersects the boundary line —
+	# no buffer, no grace distance.
+	const BALL_RADIUS = 0.121  # ~size 7 basketball outer radius in metres
 	if _oob_cooldown <= 0 and not _oob_disabled:
 		var oob = false
-		if abs(global_position.x) > court_half_width + 0.5:
+		if abs(global_position.x) > court_half_width - BALL_RADIUS:
 			oob = true
-		if abs(global_position.z) > court_half_length + 0.5:
+		if abs(global_position.z) > court_half_length - BALL_RADIUS:
 			oob = true
 		if global_position.y < -1.0:
 			oob = true
 		
 		if oob:
-			_oob_cooldown = 2.0  # Don't re-trigger for 2 seconds
+			_oob_cooldown = 2.0
 			var oob_pos = global_position
-			# Stop ball immediately
-			linear_velocity = Vector3.ZERO
-			angular_velocity = Vector3.ZERO
 			_was_shot = false
 			went_out_of_bounds.emit(last_touch_team, oob_pos)
+			# Ball keeps its momentum — game_manager handles the dead-ball period
 
 func force_position(pos: Vector3) -> void:
 	## Used by game_manager for throw-ins, tip-offs, etc.
@@ -94,10 +165,10 @@ func force_position(pos: Vector3) -> void:
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	_was_shot = false
-	_oob_cooldown = 3.0  # Prevent immediate OOB trigger after repositioning
+	_oob_cooldown = 1.5  # Short grace period so the inbounder doesn't immediately trigger OOB
 
 func is_held() -> bool:
-	return holder != null
+	return holder != null and is_instance_valid(holder) and holder.get("has_ball") == true
 
 func set_holder(player: CharacterBody3D) -> void:
 	if holder != player:
@@ -115,6 +186,11 @@ func release(shooter: CharacterBody3D = null, shooter_team: int = -1) -> void:
 		last_shooter_team = shooter_team
 		last_touch_team = shooter_team
 		_was_shot = true
+
+func force_release() -> void:
+	## Hard reset of possession state
+	holder = null
+	_was_shot = false
 
 func register_touch(team_index: int) -> void:
 	## Call when a player touches/deflects the ball without picking it up

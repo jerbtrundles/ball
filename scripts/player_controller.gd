@@ -5,7 +5,7 @@ extends Node
 var player: CharacterBody3D = null
 
 func _process(_delta: float) -> void:
-	if player == null:
+	if player == null or player.frozen:
 		return
 	
 	# Movement (WASD / Left Stick) — continuous, set every frame
@@ -36,9 +36,11 @@ func _process(_delta: float) -> void:
 		if player.has_ball:
 			player.input_shoot = true
 		else:
+			# Only tackle — NO jumping!
 			player.input_tackle = true
-			player.input_tackle = true
-			player.input_jump = true
 	
-	if Input.is_key_pressed(KEY_L):
-		player.input_kiss = true
+	if Input.is_action_just_pressed("action_tackle"):
+		player.input_tackle = true
+
+	if Input.is_action_just_pressed("action_punch"):
+		player.input_punch = true

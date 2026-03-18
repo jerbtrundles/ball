@@ -23,6 +23,14 @@ func _ready() -> void:
 	if gm and gm.get("is_season_game"):
 		btn_return_hub.show()
 	
+	# Settings Button
+	var btn_settings = btn_resume.duplicate()
+	btn_settings.text = "SETTINGS"
+	btn_settings.name = "BtnSettings"
+	menu_container.add_child(btn_settings)
+	menu_container.move_child(btn_settings, btn_return_hub.get_index())
+	btn_settings.pressed.connect(_on_settings_pressed)
+	
 	stats_panel.hide()
 	menu_container.show()
 	btn_resume.grab_focus()
@@ -39,10 +47,12 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _on_resume_pressed() -> void:
+	get_node("/root/GameAudio").play_click()
 	get_tree().paused = false
 	queue_free()
 
 func _on_quit_pressed() -> void:
+	get_node("/root/GameAudio").play_click()
 	get_tree().paused = false
 	# Clear the game manager and go to main menu
 	var gm = get_tree().get_first_node_in_group("game_manager")
@@ -52,17 +62,20 @@ func _on_quit_pressed() -> void:
 	get_tree().change_scene_to_file("res://ui/main_menu.tscn")
 
 func _on_return_hub_pressed() -> void:
+	get_node("/root/GameAudio").play_click()
 	get_tree().paused = false
 	# We transition back to hub without recording result
 	get_tree().change_scene_to_file("res://ui/season_hub.tscn")
 
 func _on_stats_pressed() -> void:
+	get_node("/root/GameAudio").play_click()
 	_populate_stats()
 	menu_container.hide()
 	stats_panel.show()
 	btn_close_stats.grab_focus()
 
 func _on_close_stats_pressed() -> void:
+	get_node("/root/GameAudio").play_click()
 	stats_panel.hide()
 	menu_container.show()
 	btn_resume.grab_focus()
@@ -173,3 +186,9 @@ func _add_stat_row(data: Dictionary, team_idx: int, t_data: Resource, is_summary
 		if is_summary:
 			lbl.modulate.a = 0.8
 		stats_grid.add_child(lbl)
+
+func _on_settings_pressed() -> void:
+	get_node("/root/GameAudio").play_click()
+	var modal_script = load("res://ui/settings_modal.gd")
+	var modal = modal_script.new()
+	add_child(modal)

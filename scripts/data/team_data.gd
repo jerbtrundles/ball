@@ -12,6 +12,7 @@ class_name TeamData
 @export var pa: int = 0
 @export var streak: int = 0
 @export var division_rank: int = 0
+@export var funds: int = 5000
 
 func _init(p_name: String = "New Team", p_color: Color = Color.BLUE, p_secondary: Color = Color(-1,-1,-1)):
 	name = p_name

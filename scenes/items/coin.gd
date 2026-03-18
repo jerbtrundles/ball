@@ -1,5 +1,5 @@
 extends Node3D
-## Coin — spinning golden disc that adds 1 bonus point on pickup.
+## Coin — spinning golden disc. Picking it up earns $150 for the player's team.
 
 var despawn_time: float = 10.0
 var _timer: float = 0.0
@@ -74,14 +74,20 @@ func _process_pickup(body: Node3D) -> void:
 		return
 	if body.is_in_group("players"):
 		
-		# Add 1 bonus point to the player's team
-		if "team_index" in body and "roster_index" in body:
-			var game_mgr = get_tree().get_first_node_in_group("game_manager")
-			if game_mgr and game_mgr.has_method("award_score"):
-				# game_mgr.award_score(body.team_index, 1, false)
-				# game_mgr.record_stat(body.team_index, body.roster_index, "coins", 1)
-				if body.has_method("add_pending_points"):
-					body.add_pending_points(1)
+		# Award $150 cash to the human player's team funds for this match
+		if "team_index" in body:
+			if body.team_index == LeagueManager.player_team_index:
+				LeagueManager.pending_game_funds += 150
+				
+				# Flashy messaging only for the human-controlled player
+				if body.is_human:
+					var hud = get_tree().get_first_node_in_group("hud")
+					if hud and hud.has_method("show_gaudy_message"):
+						hud.show_gaudy_message("FREE MONEY! +$150", 1.5, "gold")
+		
+		# Always show floating text on the player who picked it up
+		if body.has_method("show_floating_text"):
+			body.show_floating_text("+$150", Color.GOLD)
 		
 		_collected = true
 		# VFX

@@ -15,11 +15,16 @@ var _ring_mat: StandardMaterial3D = null
 var _inner_disc: MeshInstance3D = null
 var _inner_mat: StandardMaterial3D = null
 var _trigger_area: Area3D = null
+var _explosion_sounds: Array[AudioStream] = []
 
 func _ready() -> void:
 	add_to_group("hazards")
 	_build_visuals()
 	_build_trigger()
+	_explosion_sounds = [
+		load("res://assets/sounds/explosion-1.wav"),
+		load("res://assets/sounds/explosion-2.wav")
+	]
 
 func _build_visuals() -> void:
 	# Main body — dark sphere with metallic look
@@ -169,6 +174,17 @@ func _detonate() -> void:
 	# VFX
 	if VFX:
 		VFX.spawn_explosion(global_position, 1.5)
+	
+	# Randomized Explosion Sound
+	if not _explosion_sounds.is_empty():
+		var sound = _explosion_sounds[randi() % _explosion_sounds.size()]
+		var player = AudioStreamPlayer3D.new()
+		player.stream = sound
+		player.bus = "SFX"
+		player.global_position = global_position
+		get_tree().current_scene.add_child(player)
+		player.play()
+		player.finished.connect(player.queue_free)
 	
 	queue_free()
 

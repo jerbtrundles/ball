@@ -48,10 +48,10 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -300.0
-offset_top = -250.0
-offset_right = 300.0
-offset_bottom = 250.0
+offset_left = -360.0
+offset_top = -300.0
+offset_right = 360.0
+offset_bottom = 300.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_0pvwb")
@@ -68,7 +68,7 @@ theme_override_constants/margin_top = 15
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85098, 0.85098, 0.901961, 1)
 theme_override_font_sizes/font_size = 32
-text = "LOAD SEASON"
+text = "LOAD GAME"
 horizontal_alignment = 1
 
 [node name="HSeparator" type="HSeparator" parent="PanelContainer/VBoxContainer"]

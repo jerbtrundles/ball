@@ -14,8 +14,11 @@ const ID_GOLD_RUSH  = 5
 const ID_CYBER_GRID = 6
 const ID_DESERT     = 7
 const ID_NEON       = 8
+const ID_CAGE       = 9
+const ID_ROOFTOP    = 10
+const ID_GARAGE     = 11
 
-const PRESET_COUNT = 9
+const PRESET_COUNT = 12
 
 # Human-readable names in same order as ID_* constants
 const PRESET_NAMES: Array = [
@@ -27,12 +30,15 @@ const PRESET_NAMES: Array = [
 	"Gold Rush",
 	"Cyber Grid",
 	"Desert",
-	"Neon Grid"
+	"Neon Grid",
+	"The Cage",
+	"Rooftop",
+	"Underground Garage"
 ]
 
 # Emoji/icon per preset (used in UI cards)
 const PRESET_ICONS: Array = [
-	"🏟️", "🏠", "🔥", "❄️", "🌑", "✨", "🟣", "🌵", "⚡"
+	"🏟️", "🏠", "🔥", "❄️", "🌑", "✨", "🟣", "🌵", "⚡", "⛓️", "🌆", "🅿️"
 ]
 
 # =============================================================
@@ -59,6 +65,12 @@ func get_preset(index: int, team_data: Resource = null) -> CourtTheme:
 			return _make_desert()
 		ID_NEON:
 			return _make_neon()
+		ID_CAGE:
+			return _make_cage()
+		ID_ROOFTOP:
+			return _make_rooftop()
+		ID_GARAGE:
+			return _make_garage()
 		_:  # ID_DEFAULT and fallback
 			return _make_default()
 
@@ -92,19 +104,19 @@ func _make_default() -> CourtTheme:
 	var t = CourtTheme.new()
 	t.theme_name         = "Pro Arena"
 	t.floor_color        = Color(1.0, 1.0, 1.0)
-	t.wall_color         = Color(1.0, 1.0, 1.0, 0.0) # Invisible walls for bleachers
-	t.line_color         = Color(0.9, 0.9, 0.9) # Court lines: white
-	t.hoop_color         = Color(1.0, 0.2, 0.0) # Standard orange/red
-	t.ambient_color      = Color(0.4, 0.4, 0.45)
-	t.main_light_color   = Color(1.0, 0.95, 0.9)
-	t.spotlight_color    = Color(1.0, 1.0, 1.0)
-	t.floor_accent_color = Color(0.1, 0.1, 0.2)
+	t.wall_color         = Color(1.0, 1.0, 1.0, 0.0) # Invisible walls — bleachers are the wall
+	t.line_color         = Color(0.92, 0.92, 0.90)    # White court lines
+	t.hoop_color         = Color(1.0, 0.22, 0.0)      # Standard orange rim
+	t.ambient_color      = Color(0.58, 0.58, 0.60)    # Bright gym ceiling gray
+	t.main_light_color   = Color(1.0, 0.97, 0.93)     # Warm white fluorescent
+	t.spotlight_color    = Color(1.0, 0.97, 0.93)     # Matched hoop spots
+	t.floor_accent_color = Color(0.75, 0.60, 0.42)    # Warm wood tone
 	t.glow_enabled       = false
 	t.swatch_color       = Color(0.8, 0.6, 0.4)
-	
+
 	t.procedural_wood    = true
 	t.has_bleachers      = true
-	
+
 	return t
 
 func _make_neon() -> CourtTheme:
@@ -211,11 +223,64 @@ func _make_desert() -> CourtTheme:
 	t.floor_accent_color = Color(0.5, 0.3, 0.1)
 	t.glow_enabled       = false
 	t.swatch_color       = Color(0.76, 0.6, 0.42)
-	
+
 	# Hazards (using load directly as we can't easily reference PackedScene here otherwise)
 	if "hazard_scenes" in t:
 		t.hazard_scenes.append(load("res://scenes/hazards/cactus.tscn"))
 		t.hazard_scenes.append(load("res://scenes/hazards/dune.tscn"))
 		t.hazard_count = 5
-	
+
+	return t
+
+func _make_cage() -> CourtTheme:
+	var t = CourtTheme.new()
+	t.theme_name         = "The Cage"
+	t.floor_color        = Color(0.18, 0.16, 0.14)  # Worn asphalt
+	t.wall_color         = Color(0.25, 0.22, 0.18, 0.8)
+	t.line_color         = Color(0.9, 0.85, 0.6)    # Faded yellow paint
+	t.hoop_color         = Color(0.7, 0.4, 0.1)     # Rusted rim
+	t.ambient_color      = Color(0.06, 0.05, 0.04)
+	t.main_light_color   = Color(0.95, 0.88, 0.7)   # Harsh sodium lamp
+	t.spotlight_color    = Color(1.0, 0.75, 0.3)
+	t.floor_accent_color = Color(0.35, 0.28, 0.18)
+	t.glow_enabled       = false
+	t.swatch_color       = Color(0.4, 0.35, 0.2)
+	t.has_bleachers      = false
+	t.no_out_of_bounds   = true
+	t.cage_walls         = true
+	return t
+
+func _make_rooftop() -> CourtTheme:
+	var t = CourtTheme.new()
+	t.theme_name         = "Rooftop"
+	t.floor_color        = Color(0.35, 0.33, 0.32)  # Urban concrete
+	t.wall_color         = Color(0.4, 0.38, 0.35, 0.0)  # Invisible — open air
+	t.line_color         = Color(1.0, 1.0, 1.0)     # Fresh white paint
+	t.hoop_color         = Color(1.0, 0.35, 0.0)    # Bright orange
+	t.ambient_color      = Color(0.25, 0.28, 0.35)  # Night sky glow
+	t.main_light_color   = Color(0.7, 0.75, 1.0)    # Cool moonlight
+	t.spotlight_color    = Color(0.9, 0.9, 1.0)
+	t.floor_accent_color = Color(0.5, 0.48, 0.44)
+	t.glow_enabled       = false
+	t.swatch_color       = Color(0.4, 0.45, 0.6)
+	t.has_bleachers      = false
+	t.outdoor            = true
+	return t
+
+func _make_garage() -> CourtTheme:
+	var t = CourtTheme.new()
+	t.theme_name         = "Underground Garage"
+	t.floor_color        = Color(0.20, 0.20, 0.21)  # Dark concrete
+	t.wall_color         = Color(0.22, 0.22, 0.24, 0.9)
+	t.line_color         = Color(0.85, 0.82, 0.5)   # Faded yellow court lines
+	t.hoop_color         = Color(0.6, 0.55, 0.1)    # Dingy gold
+	t.ambient_color      = Color(0.04, 0.04, 0.05)
+	t.main_light_color   = Color(0.8, 0.85, 0.6)    # Flickery fluorescent
+	t.spotlight_color    = Color(0.9, 0.9, 0.5)
+	t.floor_accent_color = Color(0.28, 0.28, 0.30)
+	t.glow_enabled       = false
+	t.swatch_color       = Color(0.3, 0.3, 0.35)
+	t.has_bleachers      = false
+	t.low_ceiling        = true
+	t.has_pillars        = true
 	return t

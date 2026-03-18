@@ -23,6 +23,43 @@ var season_config: Dictionary = {}
 # Pending match data for GameManager handshake
 var pending_match_data: Dictionary = {}
 
+# --- Economy ---
+var pending_game_funds: int = 0   # Coin earnings accumulated during the current live match
+var player_team_index: int = 0    # Human team index (0 or 1); used by coin.gd
+var free_agents: Array[Resource] = []  # Available free agents refreshed each week
+
+# --- Tournament Mode ---
+var tournament_teams: Array = []          # Array[Resource] of TeamData; index 0 = player's team
+var tournament_bracket: Array = []        # Current round pairs: [[team_a_idx, team_b_idx], ...]
+var tournament_results: Array = []        # Winner indices recorded so far this round
+var tournament_match_history: Array = []  # Per-round history: Array[Array[{team_a,team_b,winner}]]
+var tournament_round: int = 0             # 0 = first round (QF for 8-team), etc.
+var tournament_size: int = 8              # 4, 8, or 16
+var is_tournament_active: bool = false
+var tournament_player_team_idx: int = 0
+var tournament_pending_advance: bool = false  # True after player's match result recorded
+var tournament_current_save_file: String = ""
+var tournament_court_theme: int = 0           # Starting court chosen in setup
+var tournament_config: Dictionary = {
+	"quarter_duration": 30.0,
+	"team_size": 3,
+	"items_enabled": true,
+	"enabled_items": {
+		"mine": true,
+		"cyclone": true,
+		"missile": true,
+		"power_up": true,
+		"coin": true,
+		"crowd_throw": true
+	}
+}
+
+# --- Survival Mode ---
+var survival_round: int = 0        # Current wave number (0-indexed; UI shows round+1)
+var survival_best_round: int = 0   # Highest wave reached across all attempts
+var is_survival_active: bool = false
+var survival_player_team: Resource = null
+
 # For debug/testing: Pre-defined team names
 const TEAM_NAMES = [
 	"Cobras", "Vipers", "Raptors", "Sharks", 
@@ -202,8 +239,9 @@ func start_new_season(selected_team: Resource, config: Dictionary) -> void:
 		player_team.roster.append(p)
 	
 	_generate_schedule()
+	_refresh_free_agents()
 	save_season()
-	get_tree().change_scene_to_file("res://ui/season_hub.tscn")
+	SceneManager.change_scene("res://ui/season_hub.tscn")
 
 
 
@@ -391,18 +429,25 @@ func simulate_week() -> Dictionary:
 			var h_score = sim_data["home_score"]
 			var a_score = sim_data["away_score"]
 			var p_won = (m["home"] == player_team.name and h_score > a_score) or (m["away"] == player_team.name and a_score > h_score)
-			var xp_reward = 100 if p_won else 50
+			# Match funds reward
+			var win_bonus = 1000 if p_won else 500
+			player_team.funds += win_bonus
 			var team_size = season_config.get("team_size", player_team.roster.size())
 			var active_roster = player_team.roster.slice(0, min(team_size, player_team.roster.size()))
 			for p in active_roster:
+				var game_entry = p.game_log.back() if p.game_log.size() > 0 else {}
+				var xp_reward = _calc_fantasy_xp(game_entry, p_won)
 				var prog = p.add_xp(xp_reward)
 				prog["xp_gained"] = xp_reward
+				prog["funds_earned"] = win_bonus
+				prog["coin_funds"] = 0  # No live coin income during simulated matches
+				prog["win_bonus"] = win_bonus
 				last_match_progression[p.name] = prog
 			player_sim_data = sim_data
-		
+
 		var h_score = sim_data["home_score"]
 		var a_score = sim_data["away_score"]
-		
+
 		m["home_score"] = h_score
 		m["away_score"] = a_score
 		m["top_scorer"] = sim_data["top_scorer"]
@@ -433,8 +478,9 @@ func simulate_week() -> Dictionary:
 	if current_week >= schedule.size():
 		start_postseason()
 	else:
+		_refresh_free_agents()
 		save_season()
-		
+
 	return player_sim_data
 
 func start_postseason() -> void:
@@ -494,10 +540,11 @@ func simulate_playoff_week() -> Dictionary:
 			var h_score = sim_data["home_score"]
 			var a_score = sim_data["away_score"]
 			var p_won = (m["home"] == player_team.name and h_score > a_score) or (m["away"] == player_team.name and a_score > h_score)
-			var xp_reward = 100 if p_won else 50
 			var team_size = season_config.get("team_size", player_team.roster.size())
 			var active_roster = player_team.roster.slice(0, min(team_size, player_team.roster.size()))
 			for p in active_roster:
+				var game_entry = p.game_log.back() if p.game_log.size() > 0 else {}
+				var xp_reward = _calc_fantasy_xp(game_entry, p_won, true)  # playoff = true
 				var prog = p.add_xp(xp_reward)
 				prog["xp_gained"] = xp_reward
 				last_match_progression[p.name] = prog
@@ -691,6 +738,110 @@ func _simulate_team_player_stats(t: Resource, total_pts: int) -> void:
 				p.blk += 1
 				break
 
+# --- Economy helpers ---
+
+func _player_ovr(p: Resource) -> float:
+	return (p.speed + p.shot + p.pass_skill + p.tackle + p.strength + p.aggression) / 6.0
+
+func _get_player_team_ovr() -> float:
+	if not player_team or player_team.roster.is_empty(): return 40.0
+	var total: float = 0.0
+	for p in player_team.roster:
+		total += _player_ovr(p)
+	return total / player_team.roster.size()
+
+func _tier_for_ovr(ovr: float) -> int:
+	if ovr >= 65.0: return 3
+	if ovr >= 45.0: return 2
+	return 1
+
+func get_free_agent_price(p: Resource) -> int:
+	return int(_player_ovr(p) * 150.0)
+
+func get_release_value(p: Resource) -> int:
+	return int(_player_ovr(p) * 55.0)
+
+func _refresh_free_agents() -> void:
+	free_agents.clear()
+	var team_ovr = _get_player_team_ovr()
+	var base_tier = _tier_for_ovr(team_ovr)
+	var count = randi_range(6, 8)
+	var jersey_pool = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 25, 30, 32, 35, 41, 44, 50]
+	for i in range(count):
+		var tier = base_tier
+		if randi() % 8 == 0:
+			tier = clampi(base_tier + 1, 1, 3)  # 1-in-8 wild card from higher tier
+		var f = FIRST_NAMES[randi() % FIRST_NAMES.size()]
+		var l = LAST_NAMES[randi() % LAST_NAMES.size()]
+		var p = PlayerDataScript.new("%s %s" % [f, l], 100)
+		p.number = jersey_pool[randi() % jersey_pool.size()]
+		p.randomize_with_archetype(tier)
+		free_agents.append(p)
+
+func sign_free_agent(p: Resource) -> Dictionary:
+	if not player_team:
+		return {"ok": false, "reason": "No active team."}
+	if player_team.roster.size() >= 5:
+		return {"ok": false, "reason": "Roster full. Release a player first."}
+	var price = get_free_agent_price(p)
+	if player_team.funds < price:
+		return {"ok": false, "reason": "Insufficient funds ($%d needed, $%d available)." % [price, player_team.funds]}
+	player_team.funds -= price
+	player_team.add_player(p)
+	free_agents.erase(p)
+	save_season()
+	return {"ok": true, "reason": ""}
+
+func release_player(p: Resource) -> Dictionary:
+	if not player_team:
+		return {"ok": false, "value": 0, "reason": "No active team."}
+	# Hard guard: never release the last player
+	if player_team.roster.size() <= 1:
+		return {"ok": false, "value": 0, "reason": "Cannot release your last player."}
+	# Soft guard: block if this would leave 1 player AND no affordable FA exists
+	var value = get_release_value(p)
+	if player_team.roster.size() <= 2:
+		var funds_after = player_team.funds + value
+		var any_affordable = false
+		for fa in free_agents:
+			if funds_after >= get_free_agent_price(fa):
+				any_affordable = true
+				break
+		if not any_affordable and not free_agents.is_empty():
+			return {"ok": false, "value": 0, "reason": "Releasing would leave you unable to afford any free agent. Earn more funds first."}
+	player_team.roster.erase(p)
+	player_team.funds += value
+	save_season()
+	return {"ok": true, "value": value, "reason": ""}
+
+func _calc_fantasy_xp(game_entry: Dictionary, is_win: bool, is_playoff: bool = false) -> int:
+	## Fantasy-league style XP: players earn based on their individual stats, not just win/loss.
+	var xp: int = 0
+
+	xp += game_entry.get("pts", 0) * 1   # 1 XP / point
+	xp += game_entry.get("reb", 0) * 2   # 2 XP / rebound
+	xp += game_entry.get("ast", 0) * 3   # 3 XP / assist
+	xp += game_entry.get("blk", 0) * 4   # 4 XP / block
+	xp += game_entry.get("tpm", 0) * 2   # 2 bonus XP / 3-pointer made
+
+	if is_win:
+		xp += 25  # Win bonus
+
+	# Double / triple-double bonuses
+	var dd_cats: int = 0
+	if game_entry.get("pts", 0) >= 10: dd_cats += 1
+	if game_entry.get("reb", 0) >= 10: dd_cats += 1
+	if game_entry.get("ast", 0) >= 10: dd_cats += 1
+	if dd_cats >= 3:
+		xp += 40  # Triple-double
+	elif dd_cats == 2:
+		xp += 20  # Double-double
+
+	if is_playoff:
+		xp = int(xp * 1.5)  # Playoff stakes amplify growth
+
+	return maxi(xp, 5)  # Everyone earns at least 5 XP for suiting up
+
 func _get_team_rating(team: Resource) -> int:
 	if team.roster.is_empty(): return 0
 	var total = 0.0
@@ -714,7 +865,7 @@ func start_quick_match(team_a: Resource, team_b: Resource, config: Dictionary = 
 	}
 	
 	# Load the main court scene
-	get_tree().change_scene_to_file("res://scenes/court/court.tscn")
+	SceneManager.change_scene("res://scenes/court/court.tscn")
 
 func start_debug_match() -> void:
 	if divisions.is_empty():
@@ -741,7 +892,7 @@ func start_debug_match() -> void:
 		"config": config
 	}
 	
-	get_tree().change_scene_to_file("res://scenes/court/court.tscn")
+	SceneManager.change_scene("res://scenes/court/court.tscn")
 	
 func clear_pending_match() -> void:
 	pending_match_data.clear()
@@ -867,6 +1018,21 @@ func delete_season_save(filename: String) -> void:
 			dir.remove(filename.get_file())
 
 func save_season() -> void:
+	var fa_data: Array = []
+	for fa in free_agents:
+		fa_data.append({
+			"name": fa.name,
+			"number": fa.number,
+			"speed": fa.speed,
+			"shot": fa.shot,
+			"pass_skill": fa.pass_skill,
+			"tackle": fa.tackle,
+			"strength": fa.strength,
+			"aggression": fa.aggression,
+			"xp": fa.xp,
+			"level": fa.level
+		})
+
 	var save_data = {
 		"current_season": current_season,
 		"player_team_name": player_team.name if player_team else "",
@@ -875,6 +1041,7 @@ func save_season() -> void:
 		"playoff_schedule": playoff_schedule,
 		"season_config": season_config,
 		"schedule": schedule,
+		"free_agents": fa_data,
 		"divisions": []
 	}
 	for div in divisions:
@@ -892,6 +1059,7 @@ func save_season() -> void:
 				"pf": team.pf,
 				"pa": team.pa,
 				"streak": team.streak,
+				"funds": team.funds,
 				"roster": []
 			}
 			for p in team.roster:
@@ -980,6 +1148,7 @@ func load_season(filename: String) -> bool:
 			team.pf = raw_t.get("pf", 0)
 			team.pa = raw_t.get("pa", 0)
 			team.streak = raw_t.get("streak", 0)
+			team.funds = raw_t.get("funds", 5000)
 			
 			_generate_team_logo(team, t_name, color)
 			
@@ -1016,7 +1185,25 @@ func load_season(filename: String) -> bool:
 		
 	if not player_team and divisions.size() > 0 and divisions[0]["teams"].size() > 0:
 		player_team = divisions[0]["teams"][0]
-		
+
+	# Restore free agent pool
+	free_agents.clear()
+	for raw_fa in save_data.get("free_agents", []):
+		var fa = PlayerDataScript.new(raw_fa.get("name", "Unknown"), 100)
+		fa.number = raw_fa.get("number", 0)
+		fa.speed = raw_fa.get("speed", 5.0)
+		fa.shot = raw_fa.get("shot", 5.0)
+		fa.pass_skill = raw_fa.get("pass_skill", 5.0)
+		fa.tackle = raw_fa.get("tackle", 5.0)
+		fa.strength = raw_fa.get("strength", 5.0)
+		fa.aggression = raw_fa.get("aggression", 5.0)
+		fa.xp = raw_fa.get("xp", 0)
+		fa.level = raw_fa.get("level", 1)
+		free_agents.append(fa)
+	# Generate a fresh pool if none were saved (first load / old save files)
+	if free_agents.is_empty():
+		_refresh_free_agents()
+
 	current_save_file = filename
 	print("Loaded Season from %s. Player Team: %s" % [filename, player_team.name])
 	return true
@@ -1106,15 +1293,26 @@ func record_season_match_result(player_score: int, opponent_score: int, opponent
 			best_ast = p
 			best_ast_val = g_ast
 		
+	# --- Match earnings: coins collected + win/loss bonus ---
+	var win_bonus = 1000 if p_won else 500
+	var coin_income = pending_game_funds
+	var total_funds_earned = coin_income + win_bonus
+	player_team.funds += total_funds_earned
+	pending_game_funds = 0
+
 	# Handle XP and Progression for Player Team
 	last_match_progression.clear()
-	var xp_reward = 100 if p_won else 50
-	
+
 	var team_size = season_config.get("team_size", player_team.roster.size())
 	var active_roster = player_team.roster.slice(0, min(team_size, player_team.roster.size()))
 	for p in active_roster:
+		var game_entry = p.game_log.back() if p.game_log.size() > 0 else {}
+		var xp_reward = _calc_fantasy_xp(game_entry, p_won, is_postseason)
 		var prog = p.add_xp(xp_reward)
 		prog["xp_gained"] = xp_reward
+		prog["funds_earned"] = total_funds_earned
+		prog["coin_funds"] = coin_income
+		prog["win_bonus"] = win_bonus
 		last_match_progression[p.name] = prog
 		
 	# Find our match in the schedule and mark it played
@@ -1144,6 +1342,11 @@ func record_season_match_result(player_score: int, opponent_score: int, opponent
 					var next_round = playoff_schedule[current_week + 1]
 					var nm = next_round[m["next_match"]]
 					nm[m["next_slot"]] = winner_name
+				elif is_postseason and current_week == playoff_schedule.size() - 1:
+					# Final championship match!
+					var winner_name = player_team.name if p_won else opponent.name
+					var winner_team = player_team if p_won else opponent
+					winner_team.funds += 5000
 				break
 				
 	# If we successfully recorded our match into the schedule, simulate the rest of the week's games for other teams
@@ -1232,3 +1435,444 @@ func process_season_rollover(champion_name: String) -> void:
 	current_week = 0
 	_generate_schedule()
 	save_season()
+
+# =============================================================
+#  TOURNAMENT MODE
+# =============================================================
+
+## Set up a single-elimination tournament.
+## size can be 4, 8, or 16.
+## all_teams (optional) provides ALL teams including player's at index 0.
+## If omitted or short, remaining slots are filled from the league pool.
+func start_tournament(player_team_data: Resource, all_teams: Array = [], size: int = 8, config: Dictionary = {}) -> void:
+	if not config.is_empty():
+		tournament_config = config
+	if divisions.is_empty():
+		generate_default_league()
+
+	tournament_size = size
+	tournament_match_history.clear()
+	tournament_pending_advance = false
+	tournament_current_save_file = ""
+
+	# Build team list: player first, then CPU teams
+	tournament_teams.clear()
+	tournament_teams.append(player_team_data)
+
+	if all_teams.size() >= size - 1:
+		# Use the explicitly provided CPU teams
+		for i in range(size - 1):
+			tournament_teams.append(all_teams[i])
+	else:
+		# Incorporate any explicitly provided teams first
+		for t in all_teams:
+			if t != player_team_data:
+				tournament_teams.append(t)
+		# Fill the rest from the league pool
+		var used = all_teams.duplicate()
+		used.append(player_team_data)
+		var pool: Array = []
+		for div in divisions:
+			for t in div["teams"]:
+				if not used.has(t):
+					pool.append(t)
+		pool.shuffle()
+		var needed = (size - 1) - (tournament_teams.size() - 1)
+		for i in range(needed):
+			if i < pool.size():
+				tournament_teams.append(pool[i])
+
+	# Pad with duplicates if still short (edge case)
+	while tournament_teams.size() < size:
+		tournament_teams.append(tournament_teams.back())
+
+	tournament_player_team_idx = 0
+	tournament_round = 0
+	tournament_results.clear()
+	is_tournament_active = true
+	player_team = player_team_data
+	player_team_index = 0
+
+	_build_tournament_bracket()
+
+## Returns round name strings based on tournament size, from first round to final.
+func get_tournament_round_names() -> Array:
+	match tournament_size:
+		4:  return ["Semi-Finals", "Final"]
+		16: return ["Round of 16", "Quarter-Finals", "Semi-Finals", "Final"]
+		_:  return ["Quarter-Finals", "Semi-Finals", "Final"]  # default 8
+
+## Generate a brand-new random team (for regen in tournament setup).
+func generate_random_team(team_name: String = "") -> Resource:
+	var team = TeamDataScript.new()
+	if team_name.is_empty():
+		team_name = TEAM_NAMES[randi() % TEAM_NAMES.size()]
+	team.name = team_name
+	team.color_primary = Color(randf(), randf(), randf()).darkened(0.1)
+	team.color_secondary = team.color_primary.inverted().darkened(0.3)
+	var roster_size = 5
+	for i in range(roster_size):
+		var p = PlayerDataScript.new()
+		p.name = "%s %s" % [FIRST_NAMES[randi() % FIRST_NAMES.size()], LAST_NAMES[randi() % LAST_NAMES.size()]]
+		p.number = randi_range(1, 99)
+		p.speed      = randi_range(45, 95)
+		p.shot       = randi_range(45, 95)
+		p.pass_skill = randi_range(45, 95)
+		p.tackle     = randi_range(45, 95)
+		p.strength   = randi_range(45, 95)
+		p.aggression = randi_range(40, 90)
+		team.roster.append(p)
+	_generate_team_logo(team, team_name, team.color_primary)
+	return team
+
+## Generates the initial bracket pairing for the current round.
+func _build_tournament_bracket() -> void:
+	tournament_bracket.clear()
+	var remaining: Array = _get_surviving_teams()
+	# Pair teams: [0 vs 1, 2 vs 3, 4 vs 5, 6 vs 7] etc.
+	var i := 0
+	while i + 1 < remaining.size():
+		tournament_bracket.append([remaining[i], remaining[i + 1]])
+		i += 2
+
+## Returns surviving team indices (winner of each previous round, plus initial seeding).
+func _get_surviving_teams() -> Array:
+	if tournament_round == 0:
+		return range(tournament_teams.size())
+	# Winners from previous round results
+	return tournament_results.duplicate()
+
+## Returns the index of the player's team in tournament_teams (-1 if eliminated).
+func get_player_tournament_index() -> int:
+	for pair in tournament_bracket:
+		if pair[0] == tournament_player_team_idx or pair[1] == tournament_player_team_idx:
+			return tournament_player_team_idx
+	return -1
+
+## Returns the match pair that contains the player's team, or [] if player is eliminated.
+func get_player_tournament_match() -> Array:
+	for pair in tournament_bracket:
+		if pair[0] == tournament_player_team_idx or pair[1] == tournament_player_team_idx:
+			return pair
+	return []
+
+## Launch the next tournament match involving the player.
+func start_tournament_match(court_theme_index: int = 0) -> void:
+	var pair = get_player_tournament_match()
+	if pair.is_empty():
+		return  # Player eliminated — shouldn't normally be called
+
+	var team_a = tournament_teams[pair[0]]
+	var team_b = tournament_teams[pair[1]]
+	var is_player_team_a = (pair[0] == tournament_player_team_idx)
+
+	pending_match_data = {
+		"team_a": team_a,
+		"team_b": team_b,
+		"config": {
+			"quarter_duration": tournament_config.get("quarter_duration", 30.0),
+			"team_size": tournament_config.get("team_size", 3),
+			"items_enabled": tournament_config.get("items_enabled", true),
+			"enabled_items": tournament_config.get("enabled_items", {}),
+			"human_team_index": 0 if is_player_team_a else 1,
+			"is_tournament_game": true,
+			"court_theme_index": court_theme_index,
+		}
+	}
+	SceneManager.change_scene("res://scenes/court/court.tscn")
+
+## Simulate CPU-vs-CPU matches in the current bracket round.
+## Returns an array of winning team indices for each pair.
+func simulate_tournament_cpu_matches() -> Array:
+	var winners: Array = []
+	for pair in tournament_bracket:
+		if pair[0] == tournament_player_team_idx or pair[1] == tournament_player_team_idx:
+			continue  # Player's match is played live
+		# Simple simulation: random weighted by team overall rating
+		var ta = tournament_teams[pair[0]]
+		var tb = tournament_teams[pair[1]]
+		var rat_a: float = _team_rating(ta)
+		var rat_b: float = _team_rating(tb)
+		winners.append(pair[0] if randf() < rat_a / (rat_a + rat_b) else pair[1])
+	return winners
+
+func _team_rating(team: Resource) -> float:
+	if not "roster" in team:
+		return 50.0
+	var total: float = 0.0
+	for p in team.roster:
+		total += (p.speed if "speed" in p else 50) + \
+				 (p.shooting if "shooting" in p else 50) + \
+				 (p.passing if "passing" in p else 50)
+	return total / max(team.roster.size(), 1)
+
+## Record the live match result (called from hud.gd after the match).
+## Sets tournament_pending_advance so the hub knows to call advance_tournament_round().
+func record_tournament_match_result(winner_is_player: bool) -> void:
+	var pair = get_player_tournament_match()
+	if pair.is_empty():
+		return
+	var winner_idx = tournament_player_team_idx if winner_is_player else \
+		(pair[1] if pair[0] == tournament_player_team_idx else pair[0])
+	tournament_results.clear()
+	tournament_results.append(winner_idx)
+	tournament_pending_advance = true
+
+## Advance to the next round. Simulates CPU matches, records full round history.
+## Returns true if the tournament is now over.
+func advance_tournament_round() -> bool:
+	# Player's match winner is in tournament_results[0]
+	var player_winner_idx = tournament_results[0] if not tournament_results.is_empty() else -1
+
+	# Simulate CPU-vs-CPU matches (returns winners in bracket order, skipping player match)
+	var cpu_winners = simulate_tournament_cpu_matches()
+
+	# Build full round history and collect all winners in bracket order
+	var round_history: Array = []
+	var all_winners: Array = []
+	var cpu_i := 0
+	for pair in tournament_bracket:
+		var is_player_match = (pair[0] == tournament_player_team_idx or pair[1] == tournament_player_team_idx)
+		var winner: int
+		if is_player_match:
+			winner = player_winner_idx
+		else:
+			winner = cpu_winners[cpu_i] if cpu_i < cpu_winners.size() else pair[0]
+			cpu_i += 1
+		round_history.append({"team_a": pair[0], "team_b": pair[1], "winner": winner})
+		all_winners.append(winner)
+
+	tournament_match_history.append(round_history)
+	tournament_round += 1
+	tournament_pending_advance = false
+
+	# Check end conditions
+	var player_survived = all_winners.has(tournament_player_team_idx)
+	if not player_survived or all_winners.size() == 1:
+		is_tournament_active = false
+		tournament_results = all_winners
+		return true
+
+	# Build next round bracket from winners
+	tournament_results.clear()
+	tournament_bracket.clear()
+	var i := 0
+	while i + 1 < all_winners.size():
+		tournament_bracket.append([all_winners[i], all_winners[i + 1]])
+		i += 2
+	return false
+
+## Save the current tournament state to disk.
+func save_tournament() -> void:
+	if tournament_teams.is_empty():
+		return
+	var teams_data: Array = []
+	for t in tournament_teams:
+		teams_data.append(_serialize_team(t))
+	var save_data = {
+		"type": "tournament",
+		"save_version": 1,
+		"tournament_size": tournament_teams.size(),
+		"tournament_round": tournament_round,
+		"tournament_player_team_idx": tournament_player_team_idx,
+		"is_tournament_active": is_tournament_active,
+		"tournament_pending_advance": tournament_pending_advance,
+		"tournament_results": tournament_results,
+		"tournament_bracket": tournament_bracket,
+		"tournament_match_history": tournament_match_history,
+		"tournament_config": tournament_config,
+		"tournament_teams": teams_data,
+		"player_team_name": tournament_teams[0].name if tournament_teams.size() > 0 else "",
+		"player_team_color": tournament_teams[0].color_primary.to_html() if tournament_teams.size() > 0 else "ffffff",
+	}
+	if tournament_current_save_file.is_empty():
+		tournament_current_save_file = "user://tournament_save_%d.json" % Time.get_unix_time_from_system()
+	var file = FileAccess.open(tournament_current_save_file, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(save_data))
+		file.close()
+
+## Load a tournament save. Returns true on success.
+func load_tournament(filename: String) -> bool:
+	if not FileAccess.file_exists(filename):
+		return false
+	var file = FileAccess.open(filename, FileAccess.READ)
+	if not file:
+		return false
+	var json_str = file.get_as_text()
+	file.close()
+	var json = JSON.new()
+	if json.parse(json_str) != OK:
+		return false
+	var data = json.data
+	if typeof(data) != TYPE_DICTIONARY:
+		return false
+
+	tournament_round             = data.get("tournament_round", 0)
+	tournament_size              = data.get("tournament_size", 8)
+	tournament_player_team_idx   = data.get("tournament_player_team_idx", 0)
+	is_tournament_active         = data.get("is_tournament_active", false)
+	tournament_pending_advance   = data.get("tournament_pending_advance", false)
+	tournament_results           = data.get("tournament_results", [])
+	tournament_bracket           = data.get("tournament_bracket", [])
+	tournament_match_history     = data.get("tournament_match_history", [])
+	tournament_config            = data.get("tournament_config", tournament_config)
+	tournament_current_save_file = filename
+
+	tournament_teams.clear()
+	for t_data in data.get("tournament_teams", []):
+		tournament_teams.append(_deserialize_team(t_data))
+
+	if tournament_teams.size() > tournament_player_team_idx:
+		player_team = tournament_teams[tournament_player_team_idx]
+	return true
+
+## Returns metadata for all saved tournaments (newest first).
+func get_all_tournament_saves() -> Array:
+	var saves: Array = []
+	var dir = DirAccess.open("user://")
+	if dir:
+		dir.list_dir_begin()
+		var file_name = dir.get_next()
+		while file_name != "":
+			if not dir.current_is_dir() and file_name.begins_with("tournament_save_") and file_name.ends_with(".json"):
+				var full_path = "user://" + file_name
+				var fh = FileAccess.open(full_path, FileAccess.READ)
+				if fh:
+					var json_str = fh.get_as_text()
+					fh.close()
+					var json = JSON.new()
+					if json.parse(json_str) == OK:
+						var d = json.data
+						if typeof(d) == TYPE_DICTIONARY:
+							var sz   = d.get("tournament_size", 8)
+							var rnd  = d.get("tournament_round", 0)
+							var rnames = get_tournament_round_names()  # uses current size, may differ
+							# Build round names for the saved size
+							var rn: Array
+							match sz:
+								4:  rn = ["Semi-Finals", "Final"]
+								16: rn = ["Round of 16", "Quarter-Finals", "Semi-Finals", "Final"]
+								_:  rn = ["Quarter-Finals", "Semi-Finals", "Final"]
+							var rname = rn[clampi(rnd, 0, rn.size() - 1)] if not rn.is_empty() else "Round %d" % rnd
+							saves.append({
+								"type": "tournament",
+								"filename": full_path,
+								"team_name": d.get("player_team_name", "Unknown"),
+								"color": Color.html(d.get("player_team_color", "ffffff")),
+								"tournament_round": rnd,
+								"tournament_size": sz,
+								"round_name": rname,
+								"is_active": d.get("is_tournament_active", false),
+								"sort_key": file_name,
+							})
+			file_name = dir.get_next()
+	saves.sort_custom(func(a, b): return a["sort_key"] > b["sort_key"])
+	return saves
+
+## Delete a tournament save file.
+func delete_tournament_save(filename: String) -> void:
+	if FileAccess.file_exists(filename):
+		var dir = DirAccess.open("user://")
+		if dir:
+			dir.remove(filename.get_file())
+		if filename == tournament_current_save_file:
+			tournament_current_save_file = ""
+
+## Returns true if any season OR tournament saves exist.
+func has_any_save() -> bool:
+	return has_saved_season() or get_all_tournament_saves().size() > 0
+
+## Serialize a TeamData resource to a plain Dictionary.
+func _serialize_team(team: Resource) -> Dictionary:
+	var roster_data: Array = []
+	for p in team.roster:
+		roster_data.append({
+			"name": p.name, "number": p.number,
+			"speed": p.speed, "shot": p.shot, "pass_skill": p.pass_skill,
+			"tackle": p.tackle, "strength": p.strength, "aggression": p.aggression,
+		})
+	return {
+		"name": team.name,
+		"color_primary": team.color_primary.to_html(),
+		"color_secondary": team.color_secondary.to_html(),
+		"roster": roster_data,
+	}
+
+## Deserialize a Dictionary back into a TeamData resource.
+func _deserialize_team(data: Dictionary) -> Resource:
+	var team = TeamDataScript.new()
+	team.name = data.get("name", "Unknown")
+	team.color_primary = Color.html(data.get("color_primary", "ffffff"))
+	team.color_secondary = Color.html(data.get("color_secondary", "000000"))
+	team.roster = []
+	for pd in data.get("roster", []):
+		var p = PlayerDataScript.new()
+		p.name        = pd.get("name", "Player")
+		p.number      = pd.get("number", 0)
+		p.speed       = pd.get("speed", 60)
+		p.shot        = pd.get("shot", 60)
+		p.pass_skill  = pd.get("pass_skill", 60)
+		p.tackle      = pd.get("tackle", 60)
+		p.strength    = pd.get("strength", 60)
+		p.aggression  = pd.get("aggression", 60)
+		team.roster.append(p)
+	return team
+
+# =============================================================
+#  SURVIVAL MODE
+# =============================================================
+
+## Begin a new survival run. player_team_data is the human's team.
+func start_survival(player_team_data: Resource) -> void:
+	if divisions.is_empty():
+		generate_default_league()
+	survival_player_team = player_team_data
+	survival_round = 0
+	is_survival_active = true
+	player_team = player_team_data
+	player_team_index = 0
+
+## Launch the next survival wave match.
+## Each wave gets slightly harder (more opponents, better stats — handled by AI).
+func start_survival_match(court_theme_index: int = 0) -> void:
+	# Pick a random CPU opponent from the league pool
+	var pool: Array = []
+	for div in divisions:
+		for t in div["teams"]:
+			if t != survival_player_team:
+				pool.append(t)
+	pool.shuffle()
+	var cpu_team = pool[0] if not pool.is_empty() else survival_player_team
+
+	# Scale team size and quarter duration with round
+	var team_sz  = clampi(2 + survival_round / 2, 2, 5)
+	var duration = 60.0 + survival_round * 10.0
+
+	pending_match_data = {
+		"team_a": survival_player_team,
+		"team_b": cpu_team,
+		"config": {
+			"quarter_duration": duration,
+			"team_size": team_sz,
+			"items_enabled": true,
+			"human_team_index": 0,
+			"is_survival_game": true,
+			"court_theme_index": court_theme_index,
+		}
+	}
+	SceneManager.change_scene("res://scenes/court/court.tscn")
+
+## Call after a survival match to advance the round counter.
+## Returns false if the player lost (survival over), true if won (continue).
+func record_survival_result(player_won: bool) -> bool:
+	if player_won:
+		survival_round += 1
+		if survival_round > survival_best_round:
+			survival_best_round = survival_round
+		return true
+	else:
+		if survival_round > survival_best_round:
+			survival_best_round = survival_round
+		is_survival_active = false
+		return false

@@ -7,7 +7,29 @@ func _ready() -> void:
 	btn_continue.pressed.connect(_on_continue)
 	_build_ui()
 	_apply_styling()
+	_play_outcome_music()
 	btn_continue.grab_focus()
+
+func _play_outcome_music() -> void:
+	var win_bonus: int = 0
+	# Check if we have any progression data to determine win/loss
+	for pname in LeagueManager.last_match_progression:
+		var prog = LeagueManager.last_match_progression[pname]
+		win_bonus = prog.get("win_bonus", 0)
+		break
+	
+	var track_path = "res://assets/sounds/Rust_Ruin_Rumble.mp3"
+	if win_bonus >= 1000: # Threshold for win bonus
+		track_path = "res://assets/sounds/Wasteland_Ascendancy.mp3"
+	
+	var music = AudioStreamPlayer.new()
+	var stream = load(track_path)
+	if stream is AudioStreamMP3:
+		stream.loop = true
+	music.stream = stream
+	music.bus = "Music"
+	add_child(music)
+	music.play()
 
 func _on_continue() -> void:
 	get_tree().change_scene_to_file("res://ui/season_hub.tscn")
@@ -15,18 +37,116 @@ func _on_continue() -> void:
 func _build_ui() -> void:
 	for child in grid.get_children():
 		child.queue_free()
-		
+
 	var team = LeagueManager.player_team
 	if not team:
 		return
-		
+
+	# --- Match Earnings Banner ---
+	# Grab data from any player's progression entry (all share the same match funds)
+	var any_prog: Dictionary = {}
+	for pname in LeagueManager.last_match_progression:
+		any_prog = LeagueManager.last_match_progression[pname]
+		break
+
+	if not any_prog.is_empty() and any_prog.has("funds_earned"):
+		var earnings_pnl = _create_earnings_panel(any_prog, team.color_primary)
+		# Insert before the grid's parent scroll — find the vbox
+		var vbox = grid.get_parent().get_parent()  # grid → ScrollContainer → VBoxContainer
+		vbox.add_child(earnings_pnl)
+		vbox.move_child(earnings_pnl, 0)
+
 	for p in team.roster:
 		if not LeagueManager.last_match_progression.has(p.name):
 			continue
-			
+
 		var prog = LeagueManager.last_match_progression[p.name]
 		var card = _create_player_card(p, prog, team.color_primary)
 		grid.add_child(card)
+
+func _create_earnings_panel(prog: Dictionary, team_color: Color) -> Control:
+	var pnl = PanelContainer.new()
+	var sb = StyleBoxFlat.new()
+	sb.bg_color = Color(0.12, 0.10, 0.05, 0.9)
+	sb.border_color = Color(1.0, 0.80, 0.1)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(8)
+	sb.content_margin_left = 20
+	sb.content_margin_right = 20
+	sb.content_margin_top = 14
+	sb.content_margin_bottom = 14
+	pnl.add_theme_stylebox_override("panel", sb)
+	pnl.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	pnl.add_child(vbox)
+
+	var title = Label.new()
+	title.text = "MATCH EARNINGS"
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title)
+
+	var sep = HSeparator.new()
+	vbox.add_child(sep)
+
+	var coin_income = prog.get("coin_funds", 0)
+	var win_bonus = prog.get("win_bonus", 0)
+	var total = prog.get("funds_earned", 0)
+
+	var rows = [
+		["Coin Income", coin_income],
+		[("Win Bonus" if win_bonus >= 1000 else "Loss Bonus"), win_bonus],
+	]
+	for row in rows:
+		var hb = HBoxContainer.new()
+		hb.add_theme_constant_override("separation", 40)
+		var lbl = Label.new()
+		lbl.text = row[0]
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl.add_theme_font_size_override("font_size", 16)
+		lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.75))
+		hb.add_child(lbl)
+		var val = Label.new()
+		val.text = "$%s" % _fmt_funds(row[1])
+		val.add_theme_font_size_override("font_size", 16)
+		val.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+		hb.add_child(val)
+		vbox.add_child(hb)
+
+	var sep2 = HSeparator.new()
+	vbox.add_child(sep2)
+
+	var total_hb = HBoxContainer.new()
+	total_hb.add_theme_constant_override("separation", 40)
+	var total_lbl = Label.new()
+	total_lbl.text = "TOTAL"
+	total_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	total_lbl.add_theme_font_size_override("font_size", 18)
+	total_lbl.add_theme_color_override("font_color", Color.WHITE)
+	total_hb.add_child(total_lbl)
+	var total_val = Label.new()
+	total_val.text = "$%s" % _fmt_funds(total)
+	total_val.add_theme_font_size_override("font_size", 18)
+	total_val.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5))
+	total_hb.add_child(total_val)
+	vbox.add_child(total_hb)
+
+	return pnl
+
+func _fmt_funds(amount: int) -> String:
+	# Format as 1,500 etc.
+	var s = str(amount)
+	var result = ""
+	var count = 0
+	for i in range(s.length() - 1, -1, -1):
+		if count > 0 and count % 3 == 0:
+			result = "," + result
+		result = s[i] + result
+		count += 1
+	return result
 
 func _create_player_card(p: Resource, prog: Dictionary, team_color: Color) -> Control:
 	var pnl = PanelContainer.new()

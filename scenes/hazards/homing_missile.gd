@@ -13,11 +13,16 @@ var _missile_mat: StandardMaterial3D = null
 var _trail_timer: float = 0.0
 var _velocity: Vector3 = Vector3.ZERO
 var _detonated: bool = false
+var _explosion_sounds: Array[AudioStream] = []
 
 func _ready() -> void:
 	add_to_group("hazards")
 	_build_visuals()
 	_find_target()
+	_explosion_sounds = [
+		load("res://assets/sounds/explosion-1.wav"),
+		load("res://assets/sounds/explosion-2.wav")
+	]
 	# Initial velocity toward target
 	if target:
 		_velocity = (target.global_position - global_position).normalized() * speed
@@ -164,5 +169,16 @@ func _detonate() -> void:
 	
 	if VFX:
 		VFX.spawn_explosion(global_position, 1.2)
+		
+	# Randomized Explosion Sound
+	if not _explosion_sounds.is_empty():
+		var sound = _explosion_sounds[randi() % _explosion_sounds.size()]
+		var player = AudioStreamPlayer3D.new()
+		player.stream = sound
+		player.bus = "SFX"
+		player.global_position = global_position
+		get_tree().current_scene.add_child(player)
+		player.play()
+		player.finished.connect(player.queue_free)
 	
 	queue_free()
